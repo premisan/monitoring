@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-telemetry-app
+  namespace: default
+  labels:
+    app: python-telemetry-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: python-telemetry-app
+  template:
+    metadata:
+      labels:
+        app: python-telemetry-app
+    spec:
+      containers:
+        - name: app
+          image: python-telemetry-app:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: python-telemetry-app
+  namespace: default
+  labels:
+    app: python-telemetry-app
+spec:
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+  selector:
+    app: python-telemetry-app
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: python-telemetry-app-monitor
+  namespace: default
+  labels:
+    app: python-telemetry-app
+spec:
+  selector:
+    matchLabels:
+      app: python-telemetry-app
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 10s
+

@@ -1,0 +1,60 @@
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    retention: 2d
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1536Mi
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+grafana:
+  adminPassword: "admin"
+  additionalDataSources:
+    # 1. Loki 데이터소스 (Log -> Trace 연동 및 UI 수정 허용)
+    - name: Loki
+      type: loki
+      uid: loki
+      access: proxy
+      url: http://loki.monitoring.svc.cluster.local:3100
+      editable: true
+      jsonData:
+        maxLines: 1000
+        derivedFields:
+          - name: TraceID
+            datasourceUid: tempo
+            matcherRegex: 'trace_id[^a-fA-F0-9]+([a-fA-F0-9]{32})'
+            url: '$${__value.raw}'
+
+    # 2. Tempo 데이터소스 (Trace -> Log 연동 및 UI 수정 허용)
+    - name: Tempo
+      type: tempo
+      uid: tempo
+      access: proxy
+      url: http://tempo.monitoring.svc.cluster.local:3200
+      editable: true
+      jsonData:
+        tracesToLogs:
+          datasourceUid: 'loki'
+          spanStartTimeShift: '-1s'
+          spanEndTimeShift: '1s'
+          filterByTraceId: true
+          tags: ['service.name']
+        tracesToMetrics:
+          datasourceUid: 'prometheus'
+          tags: [{ key: 'service.name', value: 'service' }]
+          queries:
+            - name: 'Throughput'
+              query: 'sum(rate(http_requests_total{$$__tags}[2m]))'
