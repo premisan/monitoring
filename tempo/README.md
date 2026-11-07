@@ -6,8 +6,8 @@ GKE 환경에서 트래픽 규모 및 용도(대용량 분산 / 경량 분산 / 
 
 ## 목차
 
-1. [1. 배포 규모별 권장 아키텍처 비교](#1-배포-규모별-권장-아키텍처-비교)
-2. [2. 트래픽 규모별 Grafana Tempo 배포 가이드](#2-트래픽-규모별-grafana-tempo-배포-가이드)
+1. [배포 규모별 권장 아키텍처 비교](#1-배포-규모별-권장-아키텍처-비교)
+2. [트래픽 규모별 Grafana Tempo 배포 가이드](#2-트래픽-규모별-grafana-tempo-배포-가이드)
    - [2.1 대용량 분산 모드 배포 (초당 수천 스팬 이상)](#21-대용량-분산-모드-배포-초당-수천-스팬-이상)
      - [2.1.1 사전 준비: GCS 버킷 및 Workload Identity 설정](#211-사전-준비-gcs-버킷-및-workload-identity-설정)
      - [2.1.2 Helm `tempo-values.yaml` 작성](#212-helm-tempo-valuesyaml-작성)
@@ -24,19 +24,19 @@ GKE 환경에서 트래픽 규모 및 용도(대용량 분산 / 경량 분산 / 
      - [2.3.3 Helm 배포 커맨드](#233-helm-배포-커맨드)
      - [2.3.4 배포 상태 확인 및 엔드포인트 연동](#234-배포-상태-확인-및-엔드포인트-연동)
      - [2.3.5 분산 모드 대비 개발 환경 이점 비교](#235-분산-모드-대비-개발-환경-이점-비교)
-3. [3. OpenTelemetry Operator 배포 및 자동 계측 (Auto-Instrumentation)](#3-opentelemetry-operator-배포-및-자동-계측-auto-instrumentation)
-   - [3.1 아키텍처 및 동작 원리](#31-아키텍처-및-동작-원리)
-   - [3.2 사전 준비: cert-manager 배포](#32-사전-준비-cert-manager-배포)
-   - [3.3 OpenTelemetry Operator 설치](#33-opentelemetry-operator-설치)
-   - [3.4 `Instrumentation` 커스텀 리소스(CR) 생성](#34-instrumentation-커스텀-리소스cr-생성)
-   - [3.5 자동 주입(Auto-Instrumentation) 활성화](#35-자동-주입auto-instrumentation-활성화)
-   - [3.6 주입 결과 검증 및 트레이스 확인](#36-주입-결과-검증-및-트레이스-확인)
-4. [4. Grafana Tempo 시각화를 위한 Grafana Helm 배포 가이드](#4-grafana-tempo-시각화를-위한-grafana-helm-배포-가이드)
-   - [4.1 개요 및 사전 연동 정보](#41-개요-및-사전-연동-정보)
-   - [4.2 Helm `grafana-values.yaml` 작성](#42-helm-grafana-valuesyaml-작성)
-   - [4.3 Helm 배포 커맨드](#43-helm-배포-커맨드)
-   - [4.4 접속 확인 및 시각화 사용 방법](#44-접속-확인-및-시각화-사용-방법)
-5. [5. 참고 링크](#5-참고-링크)
+3. [Grafana Tempo 시각화를 위한 Grafana Helm 배포 가이드](#3-grafana-tempo-시각화를-위한-grafana-helm-배포-가이드)
+   - [3.1 개요 및 사전 연동 정보](#31-개요-및-사전-연동-정보)
+   - [3.2 Helm `grafana-values.yaml` 작성](#32-helm-grafana-valuesyaml-작성)
+   - [3.3 Helm 배포 커맨드](#33-helm-배포-커맨드)
+   - [3.4 접속 확인 및 시각화 사용 방법](#34-접속-확인-및-시각화-사용-방법)
+4. [OpenTelemetry Operator 배포 및 자동 계측 (Auto-Instrumentation)](#4-opentelemetry-operator-배포-및-자동-계측-auto-instrumentation)
+   - [4.1 아키텍처 및 동작 원리](#41-아키텍처-및-동작-원리)
+   - [4.2 사전 준비: cert-manager 배포](#42-사전-준비-cert-manager-배포)
+   - [4.3 OpenTelemetry Operator 설치](#43-opentelemetry-operator-설치)
+   - [4.4 `Instrumentation` 커스텀 리소스(CR) 생성](#44-instrumentation-커스텀-리소스cr-생성)
+   - [4.5 자동 주입(Auto-Instrumentation) 활성화](#45-자동-주입auto-instrumentation-활성화)
+   - [4.6 주입 결과 검증 및 트레이스 확인](#46-주입-결과-검증-및-트레이스-확인)
+5. [참고 링크](#5-참고-링크)
 
 ---
 
@@ -592,234 +592,13 @@ kubectl get pods -n monitoring -l "app.kubernetes.io/instance=tempo-dev"
 
 ---
 
-## 3. OpenTelemetry Operator 배포 및 자동 계측 (Auto-Instrumentation)
-
-수집 대상이 되는 쿠버네티스(GKE 및 온프레미스 Cilium) 클러스터에 **OpenTelemetry Operator**를 설치하고, 애플리케이션 코드 수정 없이 파드 기동 시점에 런타임 에이전트를 자동으로 주입(Auto-Instrumentation)하여 분산 트레이스 데이터를 수집·전송하는 절차입니다.
-
-### 3.1 아키텍처 및 동작 원리
-
-```text
-[1. 배포 요청] kubectl apply (Pod / Deployment)
-       │
-       ▼
-[2. K8s API Server] ──(Admission Review)──▶ [OpenTelemetry Operator Webhook]
-                                                    │
-                                                    ▼
-                                            [3. Pod 변조 (Mutate)]
-                                            - initContainer 추가 (Agent 바이너리 마운트)
-                                            - OTLP 환경 변수 자동 주입
-                                                    │
-[4. Pod 생성] ◀─────────────────────────────────────┘
- └── Container 기동 시 주입된 Agent가 런타임 인터셉션 수행
-       │
-       ▼ (OTLP gRPC/HTTP 트레이스 전송)
- [Grafana Tempo 또는 OpenTelemetry Collector]
-```
-
-- **OpenTelemetry Operator**: Mutating Admission Webhook을 통해 파드의 스펙을 감지하고, 해당 언어(Java, Python, Node.js, Go, .NET 등)에 맞는 에이전트를 `initContainer`를 통해 애플리케이션 컨테이너의 파일시스템에 자동 공유·주입합니다.
-- **cert-manager 필수 요구**: 쿠버네티스 Webhook의 보안 통신(TLS 인증서)을 위해 `cert-manager`가 클러스터에 먼저 설치되어 있어야 합니다.
-
-### 3.2 사전 준비: cert-manager 배포
-
-Webhook TLS 인증서 자동 발급을 위해 `cert-manager`를 설치합니다. (이미 클러스터에 설치되어 있다면 이 단계는 건너뜁니다.)
-
-```bash
-# 1. Jetstack Helm 저장소 추가 및 갱신
-helm repo add jetstack https://charts.jetstack.io
-helm repo update
-
-# 2. cert-manager 설치 (CRD 포함)
-helm install cert-manager jetstack/cert-manager \
-  --namespace cert-manager \
-  --create-namespace \
-  --version v1.16.2 \
-  --set crds.enabled=true
-
-# 3. 파드 정상 구동 확인
-kubectl get pods -n cert-manager
-```
-
-### 3.3 OpenTelemetry Operator 설치
-
-공식 Helm 차트를 사용하여 OpenTelemetry Operator를 배포합니다.
-
-```bash
-# 1. OpenTelemetry Helm 저장소 추가 및 갱신
-helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
-helm repo update
-
-# 2. OpenTelemetry Operator 배포
-helm install opentelemetry-operator open-telemetry/opentelemetry-operator \
-  --namespace opentelemetry-operator-system \
-  --create-namespace \
-  --set "manager.collectorImage.repository=otel/opentelemetry-collector-k8s"
-
-# 3. Operator 파드 및 CRD 등록 상태 확인
-kubectl get pods -n opentelemetry-operator-system
-kubectl get crd | grep opentelemetry
-```
-
-### 3.4 `Instrumentation` 커스텀 리소스(CR) 생성
-
-`Instrumentation` CR은 주입될 에이전트의 종류, 수집 대상 트레이스를 전송할 백엔드(OTel Collector 또는 Grafana Tempo) 주소, 환경 변수 기본값을 정의합니다.
-
-#### 매니페스트 작성 (`instrumentation.yaml`)
-
-```yaml
-apiVersion: opentelemetry.io/v1alpha1
-kind: Instrumentation
-metadata:
-  name: default-instrumentation
-  namespace: default # 트레이싱 대상 애플리케이션이 위치한 네임스페이스
-spec:
-  # 트레이스 및 메트릭 전송 대상 엔드포인트 설정
-  exporter:
-    # 1) Tempo로 직접 전송할 경우 (동일 클러스터 내 monitoring 네임스페이스에 배포된 Tempo)
-    endpoint: http://tempo-distributor.monitoring.svc.cluster.local:4317
-    # (단일 모드 tempo-dev일 경우: http://tempo-dev.monitoring.svc.cluster.local:4317)
-    
-    # 2) 별도의 OTel Collector로 보낼 경우
-    # endpoint: http://otel-collector.monitoring.svc.cluster.local:4317
-
-  # 공통 샘플링 비율 (1.0 = 100% 수집, 대용량 트래픽 환경에서는 0.1~0.2 권장)
-  sampler:
-    type: parentbased_traceidratio
-    argument: "1.0"
-
-  # Java 설정 (Spring Boot 등)
-  java:
-    env:
-      - name: OTEL_TRACES_EXPORTER
-        value: "otlp"
-      - name: OTEL_METRICS_EXPORTER
-        value: "none" # 메트릭 미사용 시 전송 방지
-
-  # Python 설정 (기본 OTLP 프로토콜이 HTTP이므로 4318 포트 지정)
-  python:
-    env:
-      - name: OTEL_TRACES_EXPORTER
-        value: "otlp"
-      - name: OTEL_EXPORTER_OTLP_ENDPOINT
-        value: "http://tempo-distributor.monitoring.svc.cluster.local:4318"
-        # (단일 모드 tempo-dev일 경우: http://tempo-dev.monitoring.svc.cluster.local:4318)
-
-  # Node.js 설정 (기본 OTLP 프로토콜이 HTTP이므로 4318 포트 지정)
-  nodejs:
-    env:
-      - name: OTEL_TRACES_EXPORTER
-        value: "otlp"
-      - name: OTEL_EXPORTER_OTLP_ENDPOINT
-        value: "http://tempo-distributor.monitoring.svc.cluster.local:4318"
-
-  # Go 설정 (Go 애플리케이션 eBPF 기반 계측)
-  go:
-    env:
-      - name: OTEL_TRACES_EXPORTER
-        value: "otlp"
-
-  # .NET 설정
-  dotnet:
-    env:
-      - name: OTEL_TRACES_EXPORTER
-        value: "otlp"
-```
-
-#### 매니페스트 적용
-```bash
-kubectl apply -f instrumentation.yaml
-```
-
-### 3.5 자동 주입(Auto-Instrumentation) 활성화
-
-파드에 에이전트를 자동 주입하는 방식은 **네임스페이스 단위**와 **워크로드(Deployment/Pod) 단위** 중 선택할 수 있습니다.
-
-#### 방법 A: 네임스페이스 전체 자동 주입 (권장)
-해당 네임스페이스에 생성되는 모든 파드에 특정 언어 에이전트를 일괄 적용합니다.
-
-```yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: default
-  annotations:
-    # Java 애플리케이션 자동 계측 활성화
-    instrumentation.opentelemetry.io/inject-java: "true"
-    
-    # 여러 언어가 혼재되어 있거나 다른 언어를 지정할 경우
-    # instrumentation.opentelemetry.io/inject-python: "true"
-    # instrumentation.opentelemetry.io/inject-nodejs: "true"
-    # instrumentation.opentelemetry.io/inject-go: "true"
-    # instrumentation.opentelemetry.io/inject-dotnet: "true"
-```
-
-#### 방법 B: Deployment 단위 개별 주입
-특정 Deployment 파드 템플릿(`spec.template.metadata.annotations`)에 주석을 추가합니다.
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: payment-service
-  namespace: default
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: payment-service
-  template:
-    metadata:
-      labels:
-        app: payment-service
-      annotations:
-        # Java 에이전트 자동 주입
-        instrumentation.opentelemetry.io/inject-java: "true"
-        # 특정 Instrumentation CR을 지정할 경우 (생략 시 동일 네임스페이스의 기본 CR 참조)
-        # instrumentation.opentelemetry.io/container-names: "payment-container"
-    spec:
-      containers:
-        - name: payment-container
-          image: my-repo/payment-service:v1.0.0
-          ports:
-            - containerPort: 8080
-```
-
-### 3.6 주입 결과 검증 및 트레이스 확인
-
-#### 1) 파드 주입 상태 검사
-배포 후 애플리케이션 파드가 재생성되면 파드 상세 정보를 조회합니다.
-
-```bash
-kubectl get pod -l app=payment-service -n default
-kubectl describe pod <파드_이름> -n default
-```
-
-**정상 주입 확인 체크리스트**:
-1. **Init Containers**: `opentelemetry-auto-instrumentation` 컨테이너가 마운트되어 실행 완료(`Completed`)되었는지 확인합니다.
-2. **Environment Variables**: 애플리케이션 컨테이너에 아래와 같은 환경 변수가 자동으로 주입되었는지 확인합니다.
-   - `JAVA_TOOL_OPTIONS`: `-javaagent:/otel-auto-instrumentation-java/javaagent.jar`
-   - `OTEL_EXPORTER_OTLP_ENDPOINT`: `http://tempo-distributor.monitoring.svc.cluster.local:4317`
-   - `OTEL_SERVICE_NAME`: Deployment 또는 파드 이름
-
-#### 2) 파드 로그 확인
-```bash
-kubectl logs -f <파드_이름> -c payment-container -n default
-```
-로그 첫 부분에 OpenTelemetry Java/Python/NodeJS 에이전트의 초기화 메시지(`[otel.javaagent] ...`)가 출력되면 애플리케이션 내부 계측이 정상 시작된 것입니다.
-
-#### 3) Grafana에서 트레이스 확인
-1. Grafana 웹 콘솔 접속 후 **Explore** 메뉴로 이동합니다.
-2. 데이터소스로 기 배포된 **Tempo**를 선택합니다.
-3. **Search** 탭에서 `service.name` 드롭다운에 방금 계측된 서비스(예: `payment-service`)가 나타나는지 확인하고, TraceQL을 통해 세부 컨트롤러, 서비스 함수 실행 시간 및 쿼리 스팬을 조회합니다.
-
----
-
-## 4. Grafana Tempo 시각화를 위한 Grafana Helm 배포 가이드
+## 3. Grafana Tempo 시각화를 위한 Grafana Helm 배포 가이드
 
 본 문서는 쿠버네티스 클러스터에 배포된 Grafana Tempo의 트레이스 데이터를 조회 및 시각화하기 위해 **Grafana를 Helm으로 배포**하고, **Tempo 데이터소스를 자동으로 프로비저닝(Datasource Provisioning)**하는 설정 가이드입니다.
 
 ---
 
-### 4.1 개요 및 사전 연동 정보
+### 3.1 개요 및 사전 연동 정보
 
 Grafana가 구동될 때 수동으로 UI에서 데이터소스를 추가할 필요 없이, Helm의 `datasources.yaml` 프로비저닝 기능을 통해 Tempo 연결을 자동화합니다.
 
@@ -831,7 +610,7 @@ Grafana가 구동될 때 수동으로 UI에서 데이터소스를 추가할 필�
 
 ---
 
-### 4.2 Helm `grafana-values.yaml` 작성
+### 3.2 Helm `grafana-values.yaml` 작성
 
 Tempo 데이터소스 설정(TraceQL 지원, 노드 그래프, 서비스 그래프 등)과 기본 영구 디스크(PVC), 관리자 계정을 정의한 매니페스트입니다.
 
@@ -921,7 +700,7 @@ resources:
 
 ---
 
-### 4.3 Helm 배포 커맨드
+### 3.3 Helm 배포 커맨드
 
 Grafana 공식 Helm 저장소를 추가하고 네임스페이스에 배포합니다.
 
@@ -939,9 +718,9 @@ helm install grafana grafana/grafana \
 
 ---
 
-### 4.4 접속 확인 및 시각화 사용 방법
+### 3.4 접속 확인 및 시각화 사용 방법
 
-#### 4.4.1 파드 및 외부 IP 확인
+#### 3.4.1 파드 및 외부 IP 확인
 ```bash
 # 파드 구동 상태 확인
 kubectl get pods -n monitoring -l "app.kubernetes.io/name=grafana"
@@ -954,12 +733,12 @@ kubectl get svc grafana -n monitoring
   kubectl port-forward svc/grafana 3000:80 -n monitoring
   ```
 
-#### 4.4.2 로그인
+#### 3.4.2 로그인
 - **접속 주소**: `http://<EXTERNAL-IP>` 또는 `http://localhost:3000`
 - **ID**: `admin`
 - **Password**: `StrongAdminPassword123!` (`grafana-values.yaml`에 정의한 값)
 
-#### 4.4.3 Tempo 트레이스 조회 (Explore)
+#### 3.4.3 Tempo 트레이스 조회 (Explore)
 1. 좌측 메뉴에서 **Explore** (나침반 아이콘)를 클릭합니다.
 2. 상단 데이터소스 선택 창에서 프로비저닝된 **Tempo**를 선택합니다.
 3. **Search** 탭:
@@ -976,6 +755,227 @@ kubectl get svc grafana -n monitoring
      { span.db.statement =~ ".*SELECT.*" }
      ```
 5. 특정 트레이스를 클릭하면 **워터폴(Waterfall) 차트**와 함께 **노드 그래프(Node Graph)**가 펼쳐지며, 마이크로서비스 간의 병목 구간과 내부 호출 스택이 상세히 시각화됩니다.
+
+---
+
+## 4. OpenTelemetry Operator 배포 및 자동 계측 (Auto-Instrumentation)
+
+수집 대상이 되는 쿠버네티스(GKE 및 온프레미스 Cilium) 클러스터에 **OpenTelemetry Operator**를 설치하고, 애플리케이션 코드 수정 없이 파드 기동 시점에 런타임 에이전트를 자동으로 주입(Auto-Instrumentation)하여 분산 트레이스 데이터를 수집·전송하는 절차입니다.
+
+### 4.1 아키텍처 및 동작 원리
+
+```text
+[1. 배포 요청] kubectl apply (Pod / Deployment)
+       │
+       ▼
+[2. K8s API Server] ──(Admission Review)──▶ [OpenTelemetry Operator Webhook]
+                                                    │
+                                                    ▼
+                                            [3. Pod 변조 (Mutate)]
+                                            - initContainer 추가 (Agent 바이너리 마운트)
+                                            - OTLP 환경 변수 자동 주입
+                                                    │
+[4. Pod 생성] ◀─────────────────────────────────────┘
+ └── Container 기동 시 주입된 Agent가 런타임 인터셉션 수행
+       │
+       ▼ (OTLP gRPC/HTTP 트레이스 전송)
+ [Grafana Tempo 또는 OpenTelemetry Collector]
+```
+
+- **OpenTelemetry Operator**: Mutating Admission Webhook을 통해 파드의 스펙을 감지하고, 해당 언어(Java, Python, Node.js, Go, .NET 등)에 맞는 에이전트를 `initContainer`를 통해 애플리케이션 컨테이너의 파일시스템에 자동 공유·주입합니다.
+- **cert-manager 필수 요구**: 쿠버네티스 Webhook의 보안 통신(TLS 인증서)을 위해 `cert-manager`가 클러스터에 먼저 설치되어 있어야 합니다.
+
+### 4.2 사전 준비: cert-manager 배포
+
+Webhook TLS 인증서 자동 발급을 위해 `cert-manager`를 설치합니다. (이미 클러스터에 설치되어 있다면 이 단계는 건너뜁니다.)
+
+```bash
+# 1. Jetstack Helm 저장소 추가 및 갱신
+helm repo add jetstack https://charts.jetstack.io
+helm repo update
+
+# 2. cert-manager 설치 (CRD 포함)
+helm install cert-manager jetstack/cert-manager \
+  --namespace cert-manager \
+  --create-namespace \
+  --version v1.16.2 \
+  --set crds.enabled=true
+
+# 3. 파드 정상 구동 확인
+kubectl get pods -n cert-manager
+```
+
+### 4.3 OpenTelemetry Operator 설치
+
+공식 Helm 차트를 사용하여 OpenTelemetry Operator를 배포합니다.
+
+```bash
+# 1. OpenTelemetry Helm 저장소 추가 및 갱신
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+helm repo update
+
+# 2. OpenTelemetry Operator 배포
+helm install opentelemetry-operator open-telemetry/opentelemetry-operator \
+  --namespace opentelemetry-operator-system \
+  --create-namespace \
+  --set "manager.collectorImage.repository=otel/opentelemetry-collector-k8s"
+
+# 3. Operator 파드 및 CRD 등록 상태 확인
+kubectl get pods -n opentelemetry-operator-system
+kubectl get crd | grep opentelemetry
+```
+
+### 4.4 `Instrumentation` 커스텀 리소스(CR) 생성
+
+`Instrumentation` CR은 주입될 에이전트의 종류, 수집 대상 트레이스를 전송할 백엔드(OTel Collector 또는 Grafana Tempo) 주소, 환경 변수 기본값을 정의합니다.
+
+#### 매니페스트 작성 (`instrumentation.yaml`)
+
+```yaml
+apiVersion: opentelemetry.io/v1alpha1
+kind: Instrumentation
+metadata:
+  name: default-instrumentation
+  namespace: default # 트레이싱 대상 애플리케이션이 위치한 네임스페이스
+spec:
+  # 트레이스 및 메트릭 전송 대상 엔드포인트 설정
+  exporter:
+    # 1) Tempo로 직접 전송할 경우 (동일 클러스터 내 monitoring 네임스페이스에 배포된 Tempo)
+    endpoint: http://tempo-distributor.monitoring.svc.cluster.local:4317
+    # (단일 모드 tempo-dev일 경우: http://tempo-dev.monitoring.svc.cluster.local:4317)
+    
+    # 2) 별도의 OTel Collector로 보낼 경우
+    # endpoint: http://otel-collector.monitoring.svc.cluster.local:4317
+
+  # 공통 샘플링 비율 (1.0 = 100% 수집, 대용량 트래픽 환경에서는 0.1~0.2 권장)
+  sampler:
+    type: parentbased_traceidratio
+    argument: "1.0"
+
+  # Java 설정 (Spring Boot 등)
+  java:
+    env:
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+      - name: OTEL_METRICS_EXPORTER
+        value: "none" # 메트릭 미사용 시 전송 방지
+
+  # Python 설정 (기본 OTLP 프로토콜이 HTTP이므로 4318 포트 지정)
+  python:
+    env:
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "http://tempo-distributor.monitoring.svc.cluster.local:4318"
+        # (단일 모드 tempo-dev일 경우: http://tempo-dev.monitoring.svc.cluster.local:4318)
+
+  # Node.js 설정 (기본 OTLP 프로토콜이 HTTP이므로 4318 포트 지정)
+  nodejs:
+    env:
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "http://tempo-distributor.monitoring.svc.cluster.local:4318"
+
+  # Go 설정 (Go 애플리케이션 eBPF 기반 계측)
+  go:
+    env:
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+
+  # .NET 설정
+  dotnet:
+    env:
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+```
+
+#### 매니페스트 적용
+```bash
+kubectl apply -f instrumentation.yaml
+```
+
+### 4.5 자동 주입(Auto-Instrumentation) 활성화
+
+파드에 에이전트를 자동 주입하는 방식은 **네임스페이스 단위**와 **워크로드(Deployment/Pod) 단위** 중 선택할 수 있습니다.
+
+#### 방법 A: 네임스페이스 전체 자동 주입 (권장)
+해당 네임스페이스에 생성되는 모든 파드에 특정 언어 에이전트를 일괄 적용합니다.
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: default
+  annotations:
+    # Java 애플리케이션 자동 계측 활성화
+    instrumentation.opentelemetry.io/inject-java: "true"
+    
+    # 여러 언어가 혼재되어 있거나 다른 언어를 지정할 경우
+    # instrumentation.opentelemetry.io/inject-python: "true"
+    # instrumentation.opentelemetry.io/inject-nodejs: "true"
+    # instrumentation.opentelemetry.io/inject-go: "true"
+    # instrumentation.opentelemetry.io/inject-dotnet: "true"
+```
+
+#### 방법 B: Deployment 단위 개별 주입
+특정 Deployment 파드 템플릿(`spec.template.metadata.annotations`)에 주석을 추가합니다.
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+      annotations:
+        # Java 에이전트 자동 주입
+        instrumentation.opentelemetry.io/inject-java: "true"
+        # 특정 Instrumentation CR을 지정할 경우 (생략 시 동일 네임스페이스의 기본 CR 참조)
+        # instrumentation.opentelemetry.io/container-names: "payment-container"
+    spec:
+      containers:
+        - name: payment-container
+          image: my-repo/payment-service:v1.0.0
+          ports:
+            - containerPort: 8080
+```
+
+### 4.6 주입 결과 검증 및 트레이스 확인
+
+#### 1) 파드 주입 상태 검사
+배포 후 애플리케이션 파드가 재생성되면 파드 상세 정보를 조회합니다.
+
+```bash
+kubectl get pod -l app=payment-service -n default
+kubectl describe pod <파드_이름> -n default
+```
+
+**정상 주입 확인 체크리스트**:
+1. **Init Containers**: `opentelemetry-auto-instrumentation` 컨테이너가 마운트되어 실행 완료(`Completed`)되었는지 확인합니다.
+2. **Environment Variables**: 애플리케이션 컨테이너에 아래와 같은 환경 변수가 자동으로 주입되었는지 확인합니다.
+   - `JAVA_TOOL_OPTIONS`: `-javaagent:/otel-auto-instrumentation-java/javaagent.jar`
+   - `OTEL_EXPORTER_OTLP_ENDPOINT`: `http://tempo-distributor.monitoring.svc.cluster.local:4317`
+   - `OTEL_SERVICE_NAME`: Deployment 또는 파드 이름
+
+#### 2) 파드 로그 확인
+```bash
+kubectl logs -f <파드_이름> -c payment-container -n default
+```
+로그 첫 부분에 OpenTelemetry Java/Python/NodeJS 에이전트의 초기화 메시지(`[otel.javaagent] ...`)가 출력되면 애플리케이션 내부 계측이 정상 시작된 것입니다.
+
+#### 3) Grafana에서 트레이스 확인
+1. Grafana 웹 콘솔 접속 후 **Explore** 메뉴로 이동합니다.
+2. 데이터소스로 기 배포된 **Tempo**를 선택합니다.
+3. **Search** 탭에서 `service.name` 드롭다운에 방금 계측된 서비스(예: `payment-service`)가 나타나는지 확인하고, TraceQL을 통해 세부 컨트롤러, 서비스 함수 실행 시간 및 쿼리 스팬을 조회합니다.
 
 ---
 
