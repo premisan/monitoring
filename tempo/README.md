@@ -42,7 +42,13 @@ GKE 환경에서 트래픽 규모 및 용도(대용량 분산 / 경량 분산 / 
      - [4.4.1 옵션 A: Tempo 직접 전송 모드 (개발/경량 환경)](#441-옵션-a-tempo-직접-전송-모드-개발경량-환경)
      - [4.4.2 옵션 B: OpenTelemetry Collector 경유 모드 (운영/대규모 권장)](#442-옵션-b-opentelemetry-collector-경유-모드-운영대규모-권장)
    - [4.5 자동 주입(Auto-Instrumentation) 활성화](#45-자동-주입auto-instrumentation-활성화)
+     - [4.5.1 방법 1: 워크로드(Deployment) 단위 개별 주입 (권장)](#451-방법-1-워크로드deployment-단위-개별-주입-권장)
+     - [4.5.2 방법 2: 네임스페이스 전체 자동 주입 (단일 언어 환경 전용)](#452-방법-2-네임스페이스-전체-자동-주입-단일-언어-환경-전용)
    - [4.6 주입 결과 검증 및 트레이스 확인](#46-주입-결과-검증-및-트레이스-확인)
+   - [4.7 자동 주입 동작 원리 및 주의사항 (잠재적 문제와 해결 방안)](#47-자동-주입-동작-원리-및-주의사항-잠재적-문제와-해결-방안)
+     - [4.7.1 언어별 동작 원리 (런타임 인터셉션 메커니즘)](#471-언어별-동작-원리-런타임-인터셉션-메커니즘)
+     - [4.7.2 실무에서 발생할 수 있는 잠재적 문제](#472-실무에서-발생할-수-있는-잠재적-문제)
+     - [4.7.3 문제 해결 및 완화 방안 (Troubleshooting)](#473-문제-해결-및-완화-방안-troubleshooting)
 5. [참고 링크](#5-참고-링크)
 
 ---
@@ -1227,29 +1233,18 @@ kubectl apply -f manifests/instrumentation.yaml -n <대상_네임스페이스>
 
 ### 4.5 자동 주입(Auto-Instrumentation) 활성화
 
-파드에 에이전트를 자동 주입하는 방식은 **네임스페이스 단위**와 **워크로드(Deployment/Pod) 단위** 중 선택할 수 있습니다.
+파드에 에이전트를 자동 주입하는 방식은 **워크로드(Deployment) 단위**와 **네임스페이스 단위** 중 선택할 수 있습니다.
 
-#### 방법 A: 네임스페이스 전체 자동 주입 (권장)
-해당 네임스페이스에 생성되는 모든 파드에 특정 언어 에이전트를 일괄 적용합니다.
+> [!TIP]
+> **어떤 방식을 선택해야 할까요?**
+> - **워크로드(Deployment) 단위 (권장)**: 실무에서는 Python, Java, Node.js 등 여러 언어가 혼재되어 있거나, DB/캐시(Redis, MySQL 등) 파드가 같은 네임스페이스에 배포되는 경우가 많습니다. 워크로드 단위 주입을 사용하면 의도하지 않은 파드에 에이전트가 오주입되는 위험을 완벽히 방지할 수 있습니다.
+> - **네임스페이스 단위**: 특정 네임스페이스가 100% 동일한 단일 언어(예: 순수 Python 마이크로서비스 전용 네임스페이스)로만 구성되어 있을 때에만 제한적으로 사용하는 것이 안전합니다.
 
-```yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: default
-  annotations:
-    # Java 애플리케이션 자동 계측 활성화
-    instrumentation.opentelemetry.io/inject-java: "true"
-    
-    # 여러 언어가 혼재되어 있거나 다른 언어를 지정할 경우
-    # instrumentation.opentelemetry.io/inject-python: "true"
-    # instrumentation.opentelemetry.io/inject-nodejs: "true"
-    # instrumentation.opentelemetry.io/inject-go: "true"
-    # instrumentation.opentelemetry.io/inject-dotnet: "true"
-```
+---
 
-#### 방법 B: Deployment 단위 개별 주입
-특정 Deployment 파드 템플릿(`spec.template.metadata.annotations`)에 주석을 추가합니다.
+#### 4.5.1 방법 1: 워크로드(Deployment) 단위 개별 주입 (권장)
+
+특정 Deployment의 파드 템플릿(`spec.template.metadata.annotations`)에 사용 언어에 맞는 어노테이션을 명시합니다.
 
 ```yaml
 apiVersion: apps/v1
@@ -1267,16 +1262,50 @@ spec:
       labels:
         app: payment-service
       annotations:
-        # Java 에이전트 자동 주입
+        # 1. 사용할 언어에 맞춰 주석 활성화 (파드 언어에 맞는 1개만 지정)
         instrumentation.opentelemetry.io/inject-java: "true"
-        # 특정 Instrumentation CR을 지정할 경우 (생략 시 동일 네임스페이스의 기본 CR 참조)
+        # instrumentation.opentelemetry.io/inject-python: "true"
+        # instrumentation.opentelemetry.io/inject-nodejs: "true"
+        # instrumentation.opentelemetry.io/inject-go: "true"
+        # instrumentation.opentelemetry.io/inject-dotnet: "true"
+
+        # 2. (선택) 한 파드 내에 사이드카 등 여러 컨테이너가 있을 때 계측 대상 컨테이너 지정
         # instrumentation.opentelemetry.io/container-names: "payment-container"
+
+        # 3. (선택) 다른 네임스페이스의 Instrumentation CR을 지정할 경우
+        # instrumentation.opentelemetry.io/inject-java: "monitoring/default-instrumentation"
     spec:
       containers:
         - name: payment-container
           image: my-repo/payment-service:v1.0.0
           ports:
             - containerPort: 8080
+```
+
+---
+
+#### 4.5.2 방법 2: 네임스페이스 전체 자동 주입 (단일 언어 환경 전용)
+
+해당 네임스페이스에 생성되는 **모든 신규 파드**에 특정 언어 에이전트를 일괄 적용합니다.
+
+> [!WARNING]
+> 네임스페이스에 `inject-python: "true"`를 설정하면, 해당 네임스페이스에 배포되는 Java 애플리케이션이나 Redis/MySQL 등의 데이터베이스 파드에도 Python Init 컨테이너가 강제 주입됩니다. 따라서 **단일 언어로 통일된 네임스페이스에서만 사용**해야 합니다.
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: default
+  annotations:
+    # 해당 네임스페이스의 모든 신규 파드에 지정한 언어 에이전트를 주입
+    instrumentation.opentelemetry.io/inject-python: "true"
+    # (주의: 여러 언어 어노테이션을 동시에 선언하면 충돌이 발생할 수 있으므로 1개만 지정)
+```
+
+만약 네임스페이스에 전체 주입이 걸려 있는 상태에서 특정 파드만 계측에서 제외하고 싶다면, 해당 Deployment의 어노테이션에 `"false"`를 지정하여 오버라이드할 수 있습니다:
+```yaml
+annotations:
+  instrumentation.opentelemetry.io/inject-python: "false"
 ```
 
 ### 4.6 주입 결과 검증 및 트레이스 확인
@@ -1306,6 +1335,62 @@ kubectl logs -f <파드_이름> -c payment-container -n default
 1. Grafana 웹 콘솔 접속 후 **Explore** 메뉴로 이동합니다.
 2. 데이터소스로 기 배포된 **Tempo**를 선택합니다.
 3. **Search** 탭에서 `service.name` 드롭다운에 방금 계측된 서비스(예: `payment-service`)가 나타나는지 확인하고, TraceQL을 통해 세부 컨트롤러, 서비스 함수 실행 시간 및 쿼리 스팬을 조회합니다.
+
+---
+
+### 4.7 자동 주입 동작 원리 및 주의사항 (잠재적 문제와 해결 방안)
+
+자동 주입(Auto-Instrumentation)은 애플리케이션의 소스코드 변경 없이 분산 트레이스를 수집할 수 있는 강력한 기능이지만, 런타임 메모리 상에서 동적 후킹(Hooking)을 수행하므로 동작 원리와 잠재적인 문제점을 사전에 이해하고 운영해야 합니다.
+
+---
+
+#### 4.7.1 언어별 동작 원리 (런타임 인터셉션 메커니즘)
+
+Operator는 소스코드를 분석하는 것이 아니라, 어노테이션에 지정된 언어의 공식 에이전트 파일을 `initContainer`를 통해 파드 볼륨에 복사한 후 런타임 환경 변수로 프로세스를 가로챕니다.
+
+| 언어 | 핵심 인터셉션 기술 | 주입 환경 변수 및 동작 원리 |
+| :--- | :--- | :--- |
+| **Python** | `sitecustomize.py` & 몽키 패칭 | `PYTHONPATH`를 조작하여 파이썬 내장 부트스트랩 스크립트인 `sitecustomize.py`를 사용자 코드보다 먼저 실행. 이후 `sys.meta_path` 임포트 후킹을 통해 `Flask`, `requests`, `SQLAlchemy` 등의 핵심 함수를 동적으로 래핑(Monkey Patching)합니다. |
+| **Java** | JVM Bytecode 조작 | `JAVA_TOOL_OPTIONS="-javaagent:.../javaagent.jar"`를 통해 JVM 클래스 로딩 시점에 바이트코드를 재작성(Class Transformer)하여 메소드 호출 시간을 측정합니다. |
+| **Node.js** | Module Loader 후킹 | `NODE_OPTIONS="--require ..."`를 통해 모듈 로더를 가로채어 `express`, `http` 모듈 임포트 시 계측 로직을 바인딩합니다. |
+
+---
+
+#### 4.7.2 실무에서 발생할 수 있는 잠재적 문제
+
+자동 주입은 메모리 상에서 함수를 가로채기 때문에 다음과 같은 환경에서 런타임 오류가 발생할 수 있습니다:
+
+1. **기존 APM 도구와의 충돌 (가장 빈번)**
+   - **현상**: Datadog(`ddtrace`), New Relic, Sentry, Pinpoint 등이 이미 설치된 파드에 OpenTelemetry 자동 주입이 활성화되면, 두 도구가 동일한 네트워크/웹 함수를 이중 래핑하면서 **무한 재귀 호출(`RecursionError: maximum recursion depth exceeded`)** 또는 스택오버플로우가 발생하여 앱이 비정상 종료될 수 있습니다.
+2. **라이브러리 메이저 버전 비호환성**
+   - **현상**: 애플리케이션이 최신 메이저 버전 라이브러리(예: SQLAlchemy 2.0, Pydantic v2 등)나 반대로 단종된 구버전을 사용할 경우, OTel 에이전트가 가로채려는 내부 비공개 함수(Private Method) 시그니처가 달라 **`AttributeError`**를 발생시킬 수 있습니다.
+3. **Gunicorn / uWSGI 멀티프로세스 Fork 이슈**
+   - **현상**: 파이썬 마스터 프로세스가 자식 워커를 `fork()`할 때 OTel 백그라운드 전송 스레드가 자식 프로세스로 복제되지 않아, **트레이스가 유실되거나 메모리 누수가 발생**할 수 있습니다.
+4. **네임스페이스 다중 언어 어노테이션 충돌**
+   - **현상**: 네임스페이스에 여러 언어(`inject-python`, `inject-java` 등)를 동시에 선언하면, 모든 파드에 3개 이상의 Init 컨테이너가 직렬 실행되어 **파드 기동 지연(Startup Latency) 및 스토리지/메모리 낭비**가 발생합니다.
+
+---
+
+#### 4.7.3 문제 해결 및 완화 방안 (Troubleshooting)
+
+##### 1) 문제가 되는 특정 라이브러리 계측 비활성화
+특정 서드파티 라이브러리(예: `urllib3`, `redis`, `celery`)에서 충돌이 발생할 경우, 앱 전체를 끄지 않고 해당 라이브러리의 계측만 제외할 수 있습니다.
+```yaml
+# manifests/instrumentation.yaml 내 python.env에 추가
+python:
+  env:
+    - name: OTEL_PYTHON_DISABLED_INSTRUMENTATIONS
+      value: "urllib3,redis,celery"
+```
+
+##### 2) 워크로드(Deployment) 단위 주입 원칙 준수
+네임스페이스 레벨의 일괄 주입 대신, 각 애플리케이션 파드의 `spec.template.metadata.annotations`에 해당 파드의 언어 1개만 명시하여 다른 파드(DB, 캐시, 타 언어 앱)로의 불필요한 주입을 차단합니다.
+
+##### 3) Gunicorn `post_fork` 훅 활용
+Gunicorn 환경에서는 마스터가 아닌 워커 프로세스 기동 시점에 OTel을 안전하게 초기화할 수 있도록 `gunicorn.conf.py`의 `post_fork` 훅을 사용합니다.
+
+##### 4) 수동 계측(SDK 방식)으로 전환
+자동 주입과의 심각한 라이브러리 충돌이 지속될 경우, 자동 주입을 비활성화하고 애플리케이션 코드에 OpenTelemetry SDK를 직접 임포트하여 필요한 구간만 추적하는 **수동 계측(Manual Instrumentation)** 방식으로 전환하는 것이 가장 안전합니다.
 
 ---
 
