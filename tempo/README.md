@@ -804,3 +804,164 @@ kubectl logs -f <파드_이름> -c payment-container -n default
 - [cert-manager 공식 설치 가이드](https://cert-manager.io/docs/installation/)
 - [OpenTelemetry Operator Helm Chart 공식 리포지토리](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-operator)
 - [OpenTelemetry Operator Instrumentation CRD 공식 문서](https://opentelemetry.io/docs/kubernetes/operator/crds/#instrumentation)
+
+
+---
+
+# Grafana Tempo 시각화를 위한 Grafana Helm 배포 가이드
+
+본 문서는 쿠버네티스 클러스터에 배포된 Grafana Tempo의 트레이스 데이터를 조회 및 시각화하기 위해 **Grafana를 Helm으로 배포**하고, **Tempo 데이터소스를 자동으로 프로비저닝(Datasource Provisioning)**하는 설정 가이드입니다.
+
+---
+
+## 1. 개요 및 사전 연동 정보
+
+Grafana가 구동될 때 수동으로 UI에서 데이터소스를 추가할 필요 없이, Helm의 `datasources.yaml` 프로비저닝 기능을 통해 Tempo 연결을 자동화합니다.
+
+### 대상 Tempo 엔드포인트
+- **분산 모드 (`tempo-distributed`) 배포 시**:
+  - `http://tempo-query-frontend.monitoring.svc.cluster.local:3100`
+- **단일 모드 (`tempo` / `tempo-dev`) 배포 시**:
+  - `http://tempo-dev.monitoring.svc.cluster.local:3100` (또는 `http://tempo.monitoring.svc.cluster.local:3100`)
+
+---
+
+## 2. Helm `grafana-values.yaml` 작성
+
+Tempo 데이터소스 설정(TraceQL 지원, 노드 그래프, 서비스 그래프 등)과 기본 영구 디스크(PVC), 관리자 계정을 정의한 매니페스트입니다.
+
+```yaml
+# -------------------------------------------------------------
+# 관리자(Admin) 계정 설정
+# -------------------------------------------------------------
+adminUser: "admin"
+adminPassword: "StrongAdminPassword123!" # 프로덕션에서는 Kubernetes Secret 연동 권장
+
+# -------------------------------------------------------------
+# 데이터소스 자동 프로비저닝 (Datasource Provisioning)
+# -------------------------------------------------------------
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Tempo
+        type: tempo
+        access: proxy
+        orgId: 1
+        # [중요] Tempo 모드에 따른 URL 지정:
+        # 1) 분산 모드(tempo-distributed)인 경우:
+        url: http://tempo-query-frontend.monitoring.svc.cluster.local:3100
+        # 2) 단일 모드(tempo-dev)인 경우 아래 주소 사용:
+        # url: http://tempo-dev.monitoring.svc.cluster.local:3100
+        isDefault: true
+        version: 1
+        editable: true
+        jsonData:
+          httpMethod: GET
+          tracesToLogsV2:
+            datasourceUid: "" # 연동할 Loki 데이터소스 UID가 있을 경우 입력
+          tracesToMetrics:
+            datasourceUid: "" # 연동할 Prometheus 데이터소스 UID가 있을 경우 입력
+          serviceMap:
+            datasourceUid: "" # metrics-generator 연동 시 Prometheus UID 지정
+          nodeGraph:
+            enabled: true     # 트레이스 스팬 간 서비스 노드 그래프 활성화
+          search:
+            hide: false
+          traceQuery:
+            timeShiftEnabled: true
+            spanBar:
+              type: "Tag"
+              tag: "http.status_code"
+
+# -------------------------------------------------------------
+# 서비스 노출 설정 (GKE 기준 LoadBalancer 또는 Ingress)
+# -------------------------------------------------------------
+service:
+  enabled: true
+  type: LoadBalancer # 외부 접속용 (내부 전용일 경우 ClusterIP로 설정 후 port-forward 사용)
+  port: 80
+  targetPort: 3000
+
+# -------------------------------------------------------------
+# 영구 스토리지(PVC) 설정 (대시보드 및 설정 영구 보존)
+# -------------------------------------------------------------
+persistence:
+  enabled: true
+  storageClassName: "standard-rwo" # 온프레미스인 경우 해당 스토리지 클래스로 변경
+  size: 10Gi
+  accessModes:
+    - ReadWriteOnce
+
+# -------------------------------------------------------------
+# 리소스 할당
+# -------------------------------------------------------------
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+```
+
+- [Grafana Helm Chart 공식 리포지토리](https://github.com/grafana/helm-charts/tree/main/charts/grafana)
+- [Grafana Tempo 데이터소스 설정 공식 문서](https://grafana.com/docs/grafana/latest/datasources/tempo/)
+
+---
+
+## 3. Helm 배포 커맨드
+
+Grafana 공식 Helm 저장소를 추가하고 네임스페이스에 배포합니다.
+
+```bash
+# 1. Grafana Helm 저장소 등록 및 최신화
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
+
+# 2. Grafana 배포 (monitoring 네임스페이스)
+helm install grafana grafana/grafana \
+  --namespace monitoring \
+  --create-namespace \
+  -f grafana-values.yaml
+```
+
+---
+
+## 4. 접속 확인 및 시각화 사용 방법
+
+### 4.1 파드 및 외부 IP 확인
+```bash
+# 파드 구동 상태 확인
+kubectl get pods -n monitoring -l "app.kubernetes.io/name=grafana"
+
+# 서비스 주소 확인 (LoadBalancer External-IP 확인)
+kubectl get svc grafana -n monitoring
+```
+- 만약 `type: ClusterIP`로 설정한 경우, 아래 포트포워딩 명령어로 로컬에서 접속할 수 있습니다:
+  ```bash
+  kubectl port-forward svc/grafana 3000:80 -n monitoring
+  ```
+
+### 4.2 로그인
+- **접속 주소**: `http://<EXTERNAL-IP>` 또는 `http://localhost:3000`
+- **ID**: `admin`
+- **Password**: `StrongAdminPassword123!` (`grafana-values.yaml`에 정의한 값)
+
+### 4.3 Tempo 트레이스 조회 (Explore)
+1. 좌측 메뉴에서 **Explore** (나침반 아이콘)를 클릭합니다.
+2. 상단 데이터소스 선택 창에서 프로비저닝된 **Tempo**를 선택합니다.
+3. **Search** 탭:
+   - `Service Name`: 모니터링 대상 서비스 선택 (예: `payment-service`)
+   - `Span Name`: 특정 엔드포인트나 함수 선택 (예: `GET /api/v1/pay`)
+   - **Run query** 클릭 시 하단에 트레이스 목록과 실행 소요 시간, 상태 코드가 표시됩니다.
+4. **TraceQL** 탭:
+   - 복잡한 조건 검색(예: 소요 시간 500ms 이상이면서 500 에러가 난 트레이스):
+     ```text
+     { duration > 500ms && status = error }
+     ```
+   - 특정 SQL 쿼리를 실행한 트레이스 검색:
+     ```text
+     { span.db.statement =~ ".*SELECT.*" }
+     ```
+5. 특정 트레이스를 클릭하면 **워터폴(Waterfall) 차트**와 함께 **노드 그래프(Node Graph)**가 펼쳐지며, 마이크로서비스 간의 병목 구간과 내부 호출 스택이 상세히 시각화됩니다.

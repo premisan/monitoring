@@ -1,0 +1,114 @@
+serviceAccount:
+  create: true
+  name: "tempo-distributed"
+  annotations:
+    # Workload Identity 연동 주석
+    iam.gke.io/gcp-service-account: "tempo-gcs-sa@<GCP_프로젝트_ID>.iam.gserviceaccount.com"
+
+tempo:
+  structuredConfig:
+    multitenancy_enabled: false
+
+    # 1. 디스트리뷰터: OTLP 수신 포트 오픈
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: "0.0.0.0:4317"
+            http:
+              endpoint: "0.0.0.0:4318"
+
+    # 2. 인제스터: 초당 수천 스팬 유입에 맞춘 플러시 주기 및 버퍼 튜닝
+    ingester:
+      max_block_duration: 30m        # 블록 최대 보관 시간
+      max_block_bytes: 524288000     # 500MB 도달 시 GCS로 플러시
+      complete_block_timeout: 15m
+      trace_idle_period: 10s
+
+    # 3. 컴팩터: 데이터 보존 기간(Retention) 설정
+    compactor:
+      compaction:
+        block_retention: 72h         # 트레이스 보관 주기 (환경에 따라 조절)
+
+    # 4. 스토리지 백엔드: GCS 설정
+    storage:
+      trace:
+        backend: gcs
+        gcs:
+          bucket_name: "<GCS_버킷_이름>"  # 1단계에서 생성한 버킷 이름 입력
+        wal:
+          path: /var/tempo/wal
+        local:
+          path: /var/tempo/blocks
+
+# -------------------------------------------------------------
+# 컴포넌트별 스케일 및 리소스 설정 (초당 수천 스팬 기준)
+# -------------------------------------------------------------
+
+# Distributor: 무상태(Stateless) 유입 계층 (2대 이상 분산 배포)
+distributor:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+# Ingester: 메모리 버퍼링 및 WAL 기록 (고속 SSD PVC 할당)
+ingester:
+  replicas: 3
+  persistence:
+    enabled: true
+    size: 30Gi
+    storageClassName: "premium-rwo" # GKE SSD Persistent Disk
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+# Compactor: 블록 병합 (단일 파드로 운영)
+compactor:
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClassName: "standard-rwo"
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+# Querier: TraceQL 검색 워커 (병렬 검색을 위해 2대 구성)
+querier:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 1500m
+      memory: 1536Mi
+
+# Query Frontend: 쿼리 분할 및 스케줄링
+queryFrontend:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+# 메타데이터/검색 캐싱용 Memcached 활성화 (검색 레이턴시 개선)
+memcached:
+  enabled: true

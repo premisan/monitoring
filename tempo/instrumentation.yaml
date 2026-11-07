@@ -1,0 +1,51 @@
+apiVersion: opentelemetry.io/v1alpha1
+kind: Instrumentation
+metadata:
+  name: default-instrumentation
+spec:
+  # 트레이스 및 메트릭 전송 대상 엔드포인트 설정
+  exporter:
+    # 1) Tempo로 직접 전송할 경우 (동일 클러스터 내 monitoring 네임스페이스에 배포된 Tempo)
+    # endpoint: http://tempo-distributor.monitoring.svc.cluster.local:4317
+    endpoint: http://tempo-dev.monitoring.svc.cluster.local:4317
+    # (단일 모드 tempo-dev일 경우: http://tempo-dev.monitoring.svc.cluster.local:4317)
+    
+    # 2) 별도의 OTel Collector로 보낼 경우
+    # endpoint: http://otel-collector.monitoring.svc.cluster.local:4317
+
+  # 공통 샘플링 비율 (1.0 = 100% 수집, 대용량 트래픽 환경에서는 0.1~0.2 권장)
+  sampler:
+    type: parentbased_traceidratio
+    argument: "1.0"
+
+  # Java 설정 (Spring Boot 등)
+  java:
+    env:
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+      - name: OTEL_METRICS_EXPORTER
+        value: "none" # 메트릭 미사용 시 전송 방지
+
+  # Python 설정 (Django, FastAPI, Flask 등)
+  python:
+    env:
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+
+  # Node.js 설정 (Express, NestJS 등)
+  nodejs:
+    env:
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+
+  # Go 설정 (Go 애플리케이션 eBPF 기반 계측)
+  go:
+    env:
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+
+  # .NET 설정
+  dotnet:
+    env:
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
