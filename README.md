@@ -73,7 +73,8 @@ monitoring/
     │   ├── grafana.yaml                # 프로덕션 Grafana (Tempo 분산 연동)
     │   └── grafana-dev.yaml            # 로컬 Grafana (Tempo 단일 :3200 연동)
     ├── manifests/                      # Kubernetes Custom Resource 매니페스트
-    │   └── instrumentation.yaml        # OpenTelemetry Operator 자동 계측 CR
+    │   ├── instrumentation.yaml        # OpenTelemetry Operator 자동 계측 CR
+    │   └── otel-collector.yaml         # OpenTelemetry Collector 데몬셋 CR (노이즈 필터링, 배치 전송)
     └── sample/                         # OTel Auto-Instrumentation 검증용 샘플 앱 (Flask)
         ├── README.md                   # 샘플 앱 가이드 및 /trace-test 엔드포인트 설명
         ├── Dockerfile

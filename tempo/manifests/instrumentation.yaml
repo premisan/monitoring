@@ -5,20 +5,24 @@ metadata:
 spec:
   # 트레이스 및 메트릭 전송 대상 엔드포인트 설정
   exporter:
-    # 1) Tempo로 직접 전송할 경우 (동일 클러스터 내 monitoring 네임스페이스에 배포된 Tempo)
-    # endpoint: http://tempo-distributor.monitoring.svc.cluster.local:4317
+    # -------------------------------------------------------------
+    # [옵션 A] Tempo 백엔드로 직접 전송 (개발/경량 환경)
+    # -------------------------------------------------------------
+    # - 분산 모드: http://tempo-distributor.monitoring.svc.cluster.local:4317
+    # - 단일 모드: http://tempo-dev.monitoring.svc.cluster.local:4317
     endpoint: http://tempo-dev.monitoring.svc.cluster.local:4317
-    # (단일 모드 tempo-dev일 경우: http://tempo-dev.monitoring.svc.cluster.local:4317)
-    
-    # 2) 별도의 OTel Collector로 보낼 경우
-    # endpoint: http://otel-collector.monitoring.svc.cluster.local:4317
+
+    # -------------------------------------------------------------
+    # [옵션 B] OpenTelemetry Collector 경유 전송 (운영/대규모 권장)
+    # -------------------------------------------------------------
+    # endpoint: http://otel-collector-collector.monitoring.svc.cluster.local:4317
 
   # 공통 샘플링 비율 (1.0 = 100% 수집, 대용량 트래픽 환경에서는 0.1~0.2 권장)
   sampler:
     type: parentbased_traceidratio
     argument: "1.0"
 
-  # Java 설정 (Spring Boot 등)
+  # Java 설정 (Spring Boot 등 - gRPC 4317 포트 사용)
   java:
     env:
       - name: OTEL_TRACES_EXPORTER
@@ -31,16 +35,24 @@ spec:
     env:
       - name: OTEL_TRACES_EXPORTER
         value: "otlp"
+      # [옵션 A: 직접 전송] 단일: tempo-dev:4318 / 분산: tempo-distributor:4318
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "http://tempo-dev.monitoring.svc.cluster.local:4318"
+      # [옵션 B: Collector 경유]
+      # - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      #   value: "http://otel-collector-collector.monitoring.svc.cluster.local:4318"
 
   # Node.js 설정 (Express, NestJS 등 - HTTP 4318 포트 사용)
   nodejs:
     env:
       - name: OTEL_TRACES_EXPORTER
         value: "otlp"
+      # [옵션 A: 직접 전송] 단일: tempo-dev:4318 / 분산: tempo-distributor:4318
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "http://tempo-dev.monitoring.svc.cluster.local:4318"
+      # [옵션 B: Collector 경유]
+      # - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      #   value: "http://otel-collector-collector.monitoring.svc.cluster.local:4318"
 
   # Go 설정 (Go 애플리케이션 eBPF 기반 계측)
   go:

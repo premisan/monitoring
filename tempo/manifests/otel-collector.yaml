@@ -1,0 +1,55 @@
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: otel-collector
+  namespace: monitoring
+spec:
+  # 배포 모드: daemonset (각 노드마다 1개씩 배포, 네트워크 홉 최소화) 또는 deployment (중앙 집중형)
+  mode: daemonset
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      # 1. 메모리 제한 (과도한 부하로 인한 OOM 방지)
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 75
+        spike_limit_percentage: 20
+
+      # 2. 배치 처리 (스팬을 모아서 대량 전송하여 네트워크 부하 및 백엔드 부담 완화)
+      batch:
+        send_batch_max_size: 1000
+        timeout: 1s
+
+      # 3. 헬스체크 및 메트릭 엔드포인트 노이즈 트레이스 필터링 (스토리지 절약)
+      filter/drop_healthchecks:
+        error_mode: ignore
+        traces:
+          span:
+            - 'attributes["http.target"] == "/healthz"'
+            - 'attributes["http.target"] == "/livez"'
+            - 'attributes["http.target"] == "/readyz"'
+            - 'attributes["http.target"] == "/metrics"'
+
+    exporters:
+      # 백엔드(Tempo)로 OTLP gRPC 고효율 전송
+      otlp:
+        # 단일 모드 tempo-dev일 경우:
+        endpoint: tempo-dev.monitoring.svc.cluster.local:4317
+        # 분산 모드 tempo-distributed일 경우 아래로 변경:
+        # endpoint: tempo-distributor.monitoring.svc.cluster.local:4317
+        tls:
+          insecure: true
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, filter/drop_healthchecks, batch]
+          exporters: [otlp]

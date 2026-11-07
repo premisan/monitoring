@@ -35,10 +35,12 @@ GKE 환경에서 트래픽 규모 및 용도(대용량 분산 / 경량 분산 / 
    - [3.3 Helm 배포 커맨드](#33-helm-배포-커맨드)
    - [3.4 접속 확인 및 시각화 사용 방법](#34-접속-확인-및-시각화-사용-방법)
 4. [OpenTelemetry Operator 배포 및 자동 계측 (Auto-Instrumentation)](#4-opentelemetry-operator-배포-및-자동-계측-auto-instrumentation)
-   - [4.1 아키텍처 및 동작 원리](#41-아키텍처-및-동작-원리)
+   - [4.1 아키텍처 및 전송 방식 비교](#41-아키텍처-및-전송-방식-비교)
    - [4.2 사전 준비: cert-manager 배포](#42-사전-준비-cert-manager-배포)
    - [4.3 OpenTelemetry Operator 설치](#43-opentelemetry-operator-설치)
-   - [4.4 `Instrumentation` 커스텀 리소스(CR) 생성](#44-instrumentation-커스텀-리소스cr-생성)
+   - [4.4 트레이스 전송 파이프라인 구성 (옵션 선택)](#44-트레이스-전송-파이프라인-구성-옵션-선택)
+     - [4.4.1 옵션 A: Tempo 직접 전송 모드 (개발/경량 환경)](#441-옵션-a-tempo-직접-전송-모드-개발경량-환경)
+     - [4.4.2 옵션 B: OpenTelemetry Collector 경유 모드 (운영/대규모 권장)](#442-옵션-b-opentelemetry-collector-경유-모드-운영대규모-권장)
    - [4.5 자동 주입(Auto-Instrumentation) 활성화](#45-자동-주입auto-instrumentation-활성화)
    - [4.6 주입 결과 검증 및 트레이스 확인](#46-주입-결과-검증-및-트레이스-확인)
 5. [참고 링크](#5-참고-링크)
@@ -957,27 +959,40 @@ kubectl get svc grafana -n monitoring
 
 수집 대상이 되는 쿠버네티스(GKE 및 온프레미스 Cilium) 클러스터에 **OpenTelemetry Operator**를 설치하고, 애플리케이션 코드 수정 없이 파드 기동 시점에 런타임 에이전트를 자동으로 주입(Auto-Instrumentation)하여 분산 트레이스 데이터를 수집·전송하는 절차입니다.
 
-### 4.1 아키텍처 및 동작 원리
+### 4.1 아키텍처 및 전송 방식 비교
+
+OpenTelemetry Operator는 Mutating Admission Webhook을 통해 파드의 배포 요청을 감지하고, 해당 언어(Java, Python, Node.js, Go, .NET 등)에 맞는 계측 에이전트를 `initContainer`를 통해 애플리케이션 컨테이너에 자동 주입(Auto-Instrumentation)합니다.
+
+트레이스 수집 파이프라인은 환경 규모와 운영 요건에 따라 **2가지 전송 패턴** 중 하나를 선택하여 구성할 수 있습니다.
 
 ```text
-[1. 배포 요청] kubectl apply (Pod / Deployment)
+[ 옵션 A: 직접 전송 모드 (개발/PoC 환경) ]
+[ Application Pod ] ──(OTLP gRPC :4317 / HTTP :4318)──▶ [ Grafana Tempo ]
+
+[ 옵션 B: OTel Collector 경유 모드 (운영/프로덕션 권장) ]
+[ Application Pod ]
        │
-       ▼
-[2. K8s API Server] ──(Admission Review)──▶ [OpenTelemetry Operator Webhook]
-                                                    │
-                                                    ▼
-                                            [3. Pod 변조 (Mutate)]
-                                            - initContainer 추가 (Agent 바이너리 마운트)
-                                            - OTLP 환경 변수 자동 주입
-                                                    │
-[4. Pod 생성] ◀─────────────────────────────────────┘
- └── Container 기동 시 주입된 Agent가 런타임 인터셉션 수행
+       ▼ (로컬 노드 OTLP 전송)
+[ OpenTelemetry Collector (DaemonSet) ]
+  ├── 1) memory_limiter (OOM 방지 안전 임계치 제어)
+  ├── 2) filter (/healthz, /readyz, /metrics 노이즈 트레이스 제거)
+  └── 3) batch (스팬 대량 묶음 및 zstd 압축)
        │
-       ▼ (OTLP gRPC/HTTP 트레이스 전송)
- [Grafana Tempo 또는 OpenTelemetry Collector]
+       ▼ (고효율 단일 OTLP gRPC :4317 배치 전송)
+[ Grafana Tempo ]
 ```
 
-- **OpenTelemetry Operator**: Mutating Admission Webhook을 통해 파드의 스펙을 감지하고, 해당 언어(Java, Python, Node.js, Go, .NET 등)에 맞는 에이전트를 `initContainer`를 통해 애플리케이션 컨테이너의 파일시스템에 자동 공유·주입합니다.
+#### 옵션별 비교 요약
+
+| 비교 항목 | 옵션 A: Tempo 직접 전송 | 옵션 B: OTel Collector 경유 (권장) |
+| :--- | :---: | :---: |
+| **적합한 환경** | 로컬 개발, 소규모 PoC | 운영(Production), 대규모 마이크로서비스 |
+| **구성 복잡도** | 매우 단순 (`Instrumentation` CR 1개) | `Instrumentation` + `OpenTelemetryCollector` CR |
+| **헬스체크 노이즈 제거** | 불가능 (앱 소스코드에서 필터링 필요) | **Collector에서 `/healthz`, `/metrics` 일괄 제외** |
+| **네트워크 부하** | 파드마다 개별 백엔드 커넥션 연결 | **노드 단위 집약 단일 gRPC 채널로 전송** |
+| **배치 및 압축** | 앱 프로세스 자원 소모 | **Collector가 메모리에서 모아 압축 전송** |
+| **백엔드 교체 유연성** | 각 앱의 환경 변수 및 재배포 필요 | **Collector 설정만 수정 (무중단)** |
+
 - **cert-manager 필수 요구**: 쿠버네티스 Webhook의 보안 통신(TLS 인증서)을 위해 `cert-manager`가 클러스터에 먼저 설치되어 있어야 합니다.
 
 ### 4.2 사전 준비: cert-manager 배포
@@ -1020,11 +1035,20 @@ kubectl get pods -n opentelemetry-operator-system
 kubectl get crd | grep opentelemetry
 ```
 
-### 4.4 `Instrumentation` 커스텀 리소스(CR) 생성
+### 4.4 트레이스 전송 파이프라인 구성 (옵션 선택)
 
-`Instrumentation` CR은 주입될 에이전트의 종류, 수집 대상 트레이스를 전송할 백엔드(OTel Collector 또는 Grafana Tempo) 주소, 환경 변수 기본값을 정의합니다.
+환경 요건에 맞추어 **[옵션 A: 직접 전송]** 또는 **[옵션 B: Collector 경유]** 중 하나를 선택하여 매니페스트를 적용합니다.
 
-#### 매니페스트 작성 (`manifests/instrumentation.yaml`)
+---
+
+#### 4.4.1 옵션 A: Tempo 직접 전송 모드 (개발/경량 환경)
+
+별도의 Collector 컴포넌트 없이 애플리케이션 파드가 클러스터 내부의 Tempo Service로 트레이스를 직접 전송합니다.
+
+- **Java / Go / .NET**: `spec.exporter.endpoint`의 기본값인 gRPC(`4317`) 포트로 전송됩니다.
+- **Python / Node.js**: 공식 주입 이미지 특성에 맞춰 `python.env` 및 `nodejs.env`에 HTTP(`4318`) 포트를 오버라이드하여 지정합니다.
+
+##### 매니페스트 작성 (`manifests/instrumentation.yaml`)
 
 ```yaml
 apiVersion: opentelemetry.io/v1alpha1
@@ -1033,61 +1057,172 @@ metadata:
   name: default-instrumentation
   namespace: default # 트레이싱 대상 애플리케이션이 위치한 네임스페이스
 spec:
-  # 트레이스 및 메트릭 전송 대상 엔드포인트 설정
   exporter:
-    # 1) Tempo로 직접 전송할 경우 (동일 클러스터 내 monitoring 네임스페이스에 배포된 Tempo)
-    endpoint: http://tempo-distributor.monitoring.svc.cluster.local:4317
-    # (단일 모드 tempo-dev일 경우: http://tempo-dev.monitoring.svc.cluster.local:4317)
-    
-    # 2) 별도의 OTel Collector로 보낼 경우
-    # endpoint: http://otel-collector.monitoring.svc.cluster.local:4317
+    # 단일 모드 tempo-dev일 경우:
+    endpoint: http://tempo-dev.monitoring.svc.cluster.local:4317
+    # 분산 모드 tempo-distributed일 경우:
+    # endpoint: http://tempo-distributor.monitoring.svc.cluster.local:4317
 
-  # 공통 샘플링 비율 (1.0 = 100% 수집, 대용량 트래픽 환경에서는 0.1~0.2 권장)
   sampler:
     type: parentbased_traceidratio
     argument: "1.0"
 
-  # Java 설정 (Spring Boot 등)
   java:
     env:
       - name: OTEL_TRACES_EXPORTER
         value: "otlp"
       - name: OTEL_METRICS_EXPORTER
-        value: "none" # 메트릭 미사용 시 전송 방지
+        value: "none"
 
-  # Python 설정 (기본 OTLP 프로토콜이 HTTP이므로 4318 포트 지정)
   python:
     env:
       - name: OTEL_TRACES_EXPORTER
         value: "otlp"
+      # 단일 모드: tempo-dev:4318 / 분산 모드: tempo-distributor:4318
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
-        value: "http://tempo-distributor.monitoring.svc.cluster.local:4318"
-        # (단일 모드 tempo-dev일 경우: http://tempo-dev.monitoring.svc.cluster.local:4318)
+        value: "http://tempo-dev.monitoring.svc.cluster.local:4318"
 
-  # Node.js 설정 (기본 OTLP 프로토콜이 HTTP이므로 4318 포트 지정)
   nodejs:
     env:
       - name: OTEL_TRACES_EXPORTER
         value: "otlp"
+      # 단일 모드: tempo-dev:4318 / 분산 모드: tempo-distributor:4318
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
-        value: "http://tempo-distributor.monitoring.svc.cluster.local:4318"
+        value: "http://tempo-dev.monitoring.svc.cluster.local:4318"
 
-  # Go 설정 (Go 애플리케이션 eBPF 기반 계측)
   go:
     env:
       - name: OTEL_TRACES_EXPORTER
         value: "otlp"
 
-  # .NET 설정
   dotnet:
     env:
       - name: OTEL_TRACES_EXPORTER
         value: "otlp"
 ```
 
-#### 매니페스트 적용
+##### 매니페스트 적용
 ```bash
-kubectl apply -f manifests/instrumentation.yaml
+kubectl apply -f manifests/instrumentation.yaml -n <대상_네임스페이스>
+```
+
+---
+
+#### 4.4.2 옵션 B: OpenTelemetry Collector 경유 모드 (운영/대규모 권장)
+
+각 노드마다 데몬셋(DaemonSet) 형태로 OTel Collector를 구동하여, 파드들로부터 트레이스를 수신한 뒤 **헬스체크 노이즈 제거(`filter`), OOM 방지(`memory_limiter`), 대량 압축 전송(`batch`)**을 거쳐 백엔드(Tempo)로 고속 gRPC 전달합니다.
+
+##### 1) OpenTelemetry Collector 매니페스트 작성 (`manifests/otel-collector.yaml`)
+
+```yaml
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: otel-collector
+  namespace: monitoring
+spec:
+  # 각 노드마다 1개씩 데몬셋으로 구동하여 로컬 파드 트래픽 수신
+  mode: daemonset
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      # 메모리 사용량 75% 도달 시 안전 제어
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 75
+        spike_limit_percentage: 20
+
+      # 최대 1,000건 또는 1초 단위로 스팬을 묶어 일괄 배치 전송
+      batch:
+        send_batch_max_size: 1000
+        timeout: 1s
+
+      # 헬스체크/프로브 및 메트릭 엔드포인트 트레이스 제외 (스토리지 절약)
+      filter/drop_healthchecks:
+        error_mode: ignore
+        traces:
+          span:
+            - 'attributes["http.target"] == "/healthz"'
+            - 'attributes["http.target"] == "/livez"'
+            - 'attributes["http.target"] == "/readyz"'
+            - 'attributes["http.target"] == "/metrics"'
+
+    exporters:
+      # 백엔드(Tempo)로 gRPC 고성능 전송
+      otlp:
+        endpoint: tempo-dev.monitoring.svc.cluster.local:4317
+        # 분산 모드 tempo-distributed일 경우 아래로 지정:
+        # endpoint: tempo-distributor.monitoring.svc.cluster.local:4317
+        tls:
+          insecure: true
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, filter/drop_healthchecks, batch]
+          exporters: [otlp]
+```
+
+##### 2) Collector 배포 및 구동 확인
+```bash
+# OTel Collector 배포
+kubectl apply -f manifests/otel-collector.yaml
+
+# Collector 데몬셋 및 파드 정상 구동 확인
+kubectl get ds,pods -n monitoring -l app.kubernetes.io/name=otel-collector-collector
+```
+
+##### 3) Collector 연동용 `Instrumentation` CR 설정
+애플리케이션 파드가 백엔드가 아닌 클러스터 내 OTel Collector 서비스(`otel-collector-collector.monitoring.svc.cluster.local`)를 바라보도록 설정합니다.
+
+```yaml
+apiVersion: opentelemetry.io/v1alpha1
+kind: Instrumentation
+metadata:
+  name: default-instrumentation
+  namespace: default
+spec:
+  exporter:
+    # Collector의 OTLP gRPC 수신 포트(4317)
+    endpoint: http://otel-collector-collector.monitoring.svc.cluster.local:4317
+
+  sampler:
+    type: parentbased_traceidratio
+    argument: "1.0"
+
+  java:
+    env:
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+
+  python:
+    env:
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+      # Collector의 OTLP HTTP 수신 포트(4318)
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "http://otel-collector-collector.monitoring.svc.cluster.local:4318"
+
+  nodejs:
+    env:
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+      # Collector의 OTLP HTTP 수신 포트(4318)
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "http://otel-collector-collector.monitoring.svc.cluster.local:4318"
+```
+
+##### 4) 매니페스트 적용
+```bash
+kubectl apply -f manifests/instrumentation.yaml -n <대상_네임스페이스>
 ```
 
 ### 4.5 자동 주입(Auto-Instrumentation) 활성화
