@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: flask-hello-world
+  namespace: sample
   labels:
     app: flask-hello-world
 spec:
@@ -28,7 +29,7 @@ spec:
       containers:
         - name: flask-hello-world
           image: premisan0/flask-hello-world:v1.0.0
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: 5000
               name: http

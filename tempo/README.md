@@ -10,28 +10,28 @@ GKE 환경에서 트래픽 규모 및 용도(대용량 분산 / 경량 분산 / 
 2. [트래픽 규모별 Grafana Tempo 배포 가이드](#2-트래픽-규모별-grafana-tempo-배포-가이드)
    - [2.1 대용량 분산 모드 배포 (초당 수천 스팬 이상)](#21-대용량-분산-모드-배포-초당-수천-스팬-이상)
      - [2.1.1 사전 준비: GCS 버킷 및 Workload Identity 설정](#211-사전-준비-gcs-버킷-및-workload-identity-설정)
-     - [2.1.2 Helm `tempo-values.yaml` 작성](#212-helm-tempo-valuesyaml-작성)
+     - [2.1.2 Helm `values/tempo-distributed.yaml` 작성](#212-helm-valuestempo-distributedyaml-작성)
      - [2.1.3 Helm 배포 커맨드](#213-helm-배포-커맨드)
      - [2.1.4 배포 상태 확인 및 엔드포인트 연동](#214-배포-상태-확인-및-엔드포인트-연동)
    - [2.2 경량 분산 모드 배포 (초당 수백 스팬)](#22-경량-분산-모드-배포-초당-수백-스팬)
      - [2.2.1 사전 준비: GCS 버킷 및 Workload Identity 설정](#221-사전-준비-gcs-버킷-및-workload-identity-설정)
-     - [2.2.2 Helm `tempo-compact-values.yaml` 작성](#222-helm-tempo-compact-valuesyaml-작성)
+     - [2.2.2 Helm `values/tempo-compact.yaml` 작성](#222-helm-valuestempo-compactyaml-작성)
      - [2.2.3 Helm 배포 커맨드](#223-helm-배포-커맨드)
      - [2.2.4 배포 상태 확인 및 엔드포인트 연동](#224-배포-상태-확인-및-엔드포인트-연동)
    - [2.3 개발/테스트 초경량 단일 모드 배포 (초당 수십 스팬)](#23-개발테스트-초경량-단일-모드-배포-초당-수십-스팬)
      - [2.3.1 사전 준비: GCS 버킷 및 Workload Identity 설정 (선택)](#231-사전-준비-gcs-버킷-및-workload-identity-설정-선택)
-     - [2.3.2 Helm `tempo-dev-values.yaml` 작성](#232-helm-tempo-dev-valuesyaml-작성)
+     - [2.3.2 Helm `values/tempo-dev-gcs.yaml` 작성](#232-helm-valuestempo-dev-gcsyaml-작성)
      - [2.3.3 Helm 배포 커맨드](#233-helm-배포-커맨드)
      - [2.3.4 배포 상태 확인 및 엔드포인트 연동](#234-배포-상태-확인-및-엔드포인트-연동)
      - [2.3.5 분산 모드 대비 개발 환경 이점 비교](#235-분산-모드-대비-개발-환경-이점-비교)
    - [2.4 로컬(Docker Desktop / Minikube) 단일 모드 배포 (GCS 미사용, 기본 스토리지)](#24-로컬docker-desktop--minikube-단일-모드-배포-gcs-미사용-기본-스토리지)
-     - [2.4.1 Helm `tempo-dev-no-gcs-values.yaml` 작성](#241-helm-tempo-dev-no-gcs-valuesyaml-작성)
-     - [2.4.2 Grafana 연동용 `grafana-dev-values.yaml` 작성](#242-grafana-연동용-grafana-dev-valuesyaml-작성)
+     - [2.4.1 Helm `values/tempo-dev-local.yaml` 작성](#241-helm-valuestempo-dev-localyaml-작성)
+     - [2.4.2 Grafana 연동용 `values/grafana-dev.yaml` 작성](#242-grafana-연동용-valuesgrafana-devyaml-작성)
      - [2.4.3 로컬 Helm 배포 커맨드](#243-로컬-helm-배포-커맨드)
      - [2.4.4 배포 상태 확인 및 접속](#244-배포-상태-확인-및-접속)
 3. [Grafana Tempo 시각화를 위한 Grafana Helm 배포 가이드](#3-grafana-tempo-시각화를-위한-grafana-helm-배포-가이드)
    - [3.1 개요 및 사전 연동 정보](#31-개요-및-사전-연동-정보)
-   - [3.2 Helm `grafana-values.yaml` 작성](#32-helm-grafana-valuesyaml-작성)
+   - [3.2 Helm `values/grafana.yaml` 작성](#32-helm-valuesgrafanayaml-작성)
    - [3.3 Helm 배포 커맨드](#33-helm-배포-커맨드)
    - [3.4 접속 확인 및 시각화 사용 방법](#34-접속-확인-및-시각화-사용-방법)
 4. [OpenTelemetry Operator 배포 및 자동 계측 (Auto-Instrumentation)](#4-opentelemetry-operator-배포-및-자동-계측-auto-instrumentation)
@@ -102,7 +102,7 @@ gcloud iam service-accounts add-iam-policy-binding ${GSA_NAME}@${PROJECT_ID}.iam
   --member="serviceAccount:${PROJECT_ID}.svc.id.goog[${NAMESPACE}/${KSA_NAME}]"
 ```
 
-#### 2.1.2 Helm `tempo-values.yaml` 작성
+#### 2.1.2 Helm `values/tempo-distributed.yaml` 작성
 
 초당 수천 스팬 유입 환경에 맞춰 Ingester의 메모리 버퍼/플러시 주기와 각 컴포넌트의 CPU/Memory, PVC 스토리지 클래스를 최적화한 설정입니다.
 
@@ -234,7 +234,7 @@ helm repo update
 helm install tempo grafana/tempo-distributed \
   --namespace monitoring \
   --create-namespace \
-  -f tempo-values.yaml
+  -f values/tempo-distributed.yaml
 ```
 
 #### 2.1.4 배포 상태 확인 및 엔드포인트 연동
@@ -290,7 +290,7 @@ gcloud iam service-accounts add-iam-policy-binding ${GSA_NAME}@${PROJECT_ID}.iam
   --member="serviceAccount:${PROJECT_ID}.svc.id.goog[${NAMESPACE}/${KSA_NAME}]"
 ```
 
-#### 2.2.2 Helm `tempo-compact-values.yaml` 작성
+#### 2.2.2 Helm `values/tempo-compact.yaml` 작성
 
 ```yaml
 serviceAccount:
@@ -420,7 +420,7 @@ helm repo update
 helm install tempo grafana/tempo-distributed \
   --namespace monitoring \
   --create-namespace \
-  -f tempo-compact-values.yaml
+  -f values/tempo-compact.yaml
 ```
 
 #### 2.2.4 배포 상태 확인 및 엔드포인트 연동
@@ -477,7 +477,7 @@ gcloud iam service-accounts add-iam-policy-binding ${GSA_NAME}@${PROJECT_ID}.iam
   --member="serviceAccount:${PROJECT_ID}.svc.id.goog[${NAMESPACE}/${KSA_NAME}]"
 ```
 
-#### 2.3.2 Helm `tempo-dev-values.yaml` 작성
+#### 2.3.2 Helm `values/tempo-dev-gcs.yaml` 작성
 
 단일 바이너리 모드(`grafana/tempo`) 차트에 맞춘 설정 파일입니다. 트래픽이 적은 개발 환경의 특성을 반영하여 플러시 주기와 블록 크기를 작게 잡고, 데이터 보존 기간(Retention)을 24시간으로 설정했습니다.
 
@@ -569,7 +569,7 @@ helm repo update
 helm install tempo-dev grafana/tempo \
   --namespace monitoring \
   --create-namespace \
-  -f tempo-dev-values.yaml
+  -f values/tempo-dev-gcs.yaml
 ```
 
 #### 2.3.4 배포 상태 확인 및 엔드포인트 연동
@@ -606,7 +606,7 @@ kubectl get pods -n monitoring -l "app.kubernetes.io/instance=tempo-dev"
 - **클러스터 기본 스토리지 클래스 활용**: `storageClassName`을 명시하지 않고 생략하여 Docker Desktop의 `hostpath` 등 기본 스토리지 클래스를 자동으로 바인딩합니다.
 - **최소 리소스 할당**: 단일 파드 1대로 구동되며 CPU 100m, Memory 256Mi 수준의 최소 자원만 사용합니다.
 
-#### 2.4.1 Helm `tempo-dev-no-gcs-values.yaml` 작성
+#### 2.4.1 Helm `values/tempo-dev-local.yaml` 작성
 
 GCS 관련 설정 및 ServiceAccount 주석을 비활성화하고 순수 로컬 스토리지만 활성화한 설정 파일입니다.
 
@@ -674,7 +674,7 @@ resources:
     memory: 512Mi
 ```
 
-#### 2.4.2 Grafana 연동용 `grafana-dev-values.yaml` 작성
+#### 2.4.2 Grafana 연동용 `values/grafana-dev.yaml` 작성
 
 로컬 단일 모드 Tempo(`http://tempo-dev.monitoring.svc.cluster.local:3200`)와 연결되고, 로컬 RWO PVC 환경에서 볼륨 락 충돌 없이 안정적으로 기동되도록 설정한 Grafana 매니페스트입니다.
 
@@ -764,13 +764,13 @@ helm repo update
 helm install tempo-dev grafana/tempo \
   --namespace monitoring \
   --create-namespace \
-  -f tempo-dev-no-gcs-values.yaml
+  -f values/tempo-dev-local.yaml
 
 # 3. 로컬 Grafana 배포 (Tempo 데이터소스 자동 연동)
 helm install grafana grafana/grafana \
   --namespace monitoring \
   --create-namespace \
-  -f grafana-dev-values.yaml
+  -f values/grafana-dev.yaml
 ```
 
 #### 2.4.4 배포 상태 확인 및 접속
@@ -805,7 +805,7 @@ Grafana가 구동될 때 수동으로 UI에서 데이터소스를 추가할 필�
 
 ---
 
-### 3.2 Helm `grafana-values.yaml` 작성
+### 3.2 Helm `values/grafana.yaml` 작성
 
 Tempo 데이터소스 설정(TraceQL 지원, 노드 그래프, 서비스 그래프 등)과 기본 영구 디스크(PVC), 관리자 계정을 정의한 매니페스트입니다.
 
@@ -908,7 +908,7 @@ helm repo update
 helm install grafana grafana/grafana \
   --namespace monitoring \
   --create-namespace \
-  -f grafana-values.yaml
+  -f values/grafana.yaml
 ```
 
 ---
@@ -931,7 +931,7 @@ kubectl get svc grafana -n monitoring
 #### 3.4.2 로그인
 - **접속 주소**: `http://<EXTERNAL-IP>` 또는 `http://localhost:3000`
 - **ID**: `admin`
-- **Password**: `StrongAdminPassword123!` (`grafana-values.yaml`에 정의한 값)
+- **Password**: `StrongAdminPassword123!` (`values/grafana.yaml`에 정의한 값)
 
 #### 3.4.3 Tempo 트레이스 조회 (Explore)
 1. 좌측 메뉴에서 **Explore** (나침반 아이콘)를 클릭합니다.
@@ -1024,7 +1024,7 @@ kubectl get crd | grep opentelemetry
 
 `Instrumentation` CR은 주입될 에이전트의 종류, 수집 대상 트레이스를 전송할 백엔드(OTel Collector 또는 Grafana Tempo) 주소, 환경 변수 기본값을 정의합니다.
 
-#### 매니페스트 작성 (`instrumentation.yaml`)
+#### 매니페스트 작성 (`manifests/instrumentation.yaml`)
 
 ```yaml
 apiVersion: opentelemetry.io/v1alpha1
@@ -1087,7 +1087,7 @@ spec:
 
 #### 매니페스트 적용
 ```bash
-kubectl apply -f instrumentation.yaml
+kubectl apply -f manifests/instrumentation.yaml
 ```
 
 ### 4.5 자동 주입(Auto-Instrumentation) 활성화
