@@ -694,17 +694,22 @@ spec:
       - name: OTEL_METRICS_EXPORTER
         value: "none" # 메트릭 미사용 시 전송 방지
 
-  # Python 설정 (Django, FastAPI, Flask 등)
+  # Python 설정 (기본 OTLP 프로토콜이 HTTP이므로 4318 포트 지정)
   python:
     env:
       - name: OTEL_TRACES_EXPORTER
         value: "otlp"
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "http://tempo-distributor.monitoring.svc.cluster.local:4318"
+        # (단일 모드 tempo-dev일 경우: http://tempo-dev.monitoring.svc.cluster.local:4318)
 
-  # Node.js 설정 (Express, NestJS 등)
+  # Node.js 설정 (기본 OTLP 프로토콜이 HTTP이므로 4318 포트 지정)
   nodejs:
     env:
       - name: OTEL_TRACES_EXPORTER
         value: "otlp"
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "http://tempo-distributor.monitoring.svc.cluster.local:4318"
 
   # Go 설정 (Go 애플리케이션 eBPF 기반 계측)
   go:
