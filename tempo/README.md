@@ -24,6 +24,11 @@ GKE 환경에서 트래픽 규모 및 용도(대용량 분산 / 경량 분산 / 
      - [2.3.3 Helm 배포 커맨드](#233-helm-배포-커맨드)
      - [2.3.4 배포 상태 확인 및 엔드포인트 연동](#234-배포-상태-확인-및-엔드포인트-연동)
      - [2.3.5 분산 모드 대비 개발 환경 이점 비교](#235-분산-모드-대비-개발-환경-이점-비교)
+   - [2.4 로컬(Docker Desktop / Minikube) 단일 모드 배포 (GCS 미사용, 기본 스토리지)](#24-로컬docker-desktop--minikube-단일-모드-배포-gcs-미사용-기본-스토리지)
+     - [2.4.1 Helm `tempo-dev-no-gcs-values.yaml` 작성](#241-helm-tempo-dev-no-gcs-valuesyaml-작성)
+     - [2.4.2 Grafana 연동용 `grafana-dev-values.yaml` 작성](#242-grafana-연동용-grafana-dev-valuesyaml-작성)
+     - [2.4.3 로컬 Helm 배포 커맨드](#243-로컬-helm-배포-커맨드)
+     - [2.4.4 배포 상태 확인 및 접속](#244-배포-상태-확인-및-접속)
 3. [Grafana Tempo 시각화를 위한 Grafana Helm 배포 가이드](#3-grafana-tempo-시각화를-위한-grafana-helm-배포-가이드)
    - [3.1 개요 및 사전 연동 정보](#31-개요-및-사전-연동-정보)
    - [3.2 Helm `grafana-values.yaml` 작성](#32-helm-grafana-valuesyaml-작성)
@@ -42,15 +47,16 @@ GKE 환경에서 트래픽 규모 및 용도(대용량 분산 / 경량 분산 / 
 
 ## 1. 배포 규모별 권장 아키텍처 비교
 
-| 비교 항목 | 1. 대용량 분산 모드 | 2. 경량 분산 모드 | 3. 개발/테스트 단일 바이너리 모드 |
-| :--- | :--- | :--- | :--- |
-| **추천 트래픽** | 초당 수천 스팬 이상 (High Throughput) | 초당 수백 스팬 (100 ~ 900 spans/sec) | 초당 수십 개 ~ 1,000 스팬 미만 |
-| **Helm 차트** | `grafana/tempo-distributed` | `grafana/tempo-distributed` | `grafana/tempo` |
-| **아키텍처** | 마이크로서비스 (컴포넌트별 분리 배포) | 마이크로서비스 (최소 인스턴스 구성) | 모놀리식 (단일 파드 내 전체 구동) |
-| **파드 수** | 8개 이상 (Distributor 2, Ingester 3, Querier 2, etc.) | 5개 내외 (Distributor 1, Ingester 2, etc.) | **단 1개 파드** |
-| **PVC 스펙** | 고속 SSD (`premium-rwo`), Ingester 30Gi / Compactor 50Gi | 표준 PD (`standard-rwo`), Ingester 10Gi / Compactor 20Gi | 표준 PD (`standard-rwo`), 5Gi |
-| **캐시(Memcached)**| 사용 (`memcached.enabled: true`) | 미사용 (`memcached.enabled: false`) | 미사용 |
-| **권장 사용 환경** | 대규모 운영(Production) 환경 | 중소규모 운영 / 스테이징 환경 | 로컬 / 개발(Dev) / PoC 환경 |
+| 비교 항목 | 1. 대용량 분산 모드 | 2. 경량 분산 모드 | 3. 개발/테스트 단일 바이너리 모드 | 4. 로컬 클러스터 단일 모드 (No GCS) |
+| :--- | :--- | :--- | :--- | :--- |
+| **추천 트래픽** | 초당 수천 스팬 이상 (High Throughput) | 초당 수백 스팬 (100 ~ 900 spans/sec) | 초당 수십 개 ~ 1,000 스팬 미만 | 초당 수십 개 미만 (개인 개발/학습) |
+| **Helm 차트** | `grafana/tempo-distributed` | `grafana/tempo-distributed` | `grafana/tempo` | `grafana/tempo` |
+| **아키텍처** | 마이크로서비스 (컴포넌트별 분리 배포) | 마이크로서비스 (최소 인스턴스 구성) | 모놀리식 (단일 파드 내 전체 구동) | 모놀리식 (단일 파드 내 전체 구동) |
+| **파드 수** | 8개 이상 (Distributor 2, Ingester 3, Querier 2, etc.) | 5개 내외 (Distributor 1, Ingester 2, etc.) | **단 1개 파드** | **단 1개 파드** |
+| **스토리지 백엔드** | Google Cloud Storage (GCS) | Google Cloud Storage (GCS) | Google Cloud Storage (GCS) | **로컬 디스크 (`backend: local`)** |
+| **PVC 스펙** | 고속 SSD (`premium-rwo`), Ingester 30Gi / Compactor 50Gi | 표준 PD (`standard-rwo`), Ingester 10Gi / Compactor 20Gi | 표준 PD (`standard-rwo`), 5Gi | **로컬 기본 SC (`hostpath` 등), 5Gi** |
+| **캐시(Memcached)**| 사용 (`memcached.enabled: true`) | 미사용 (`memcached.enabled: false`) | 미사용 | 미사용 |
+| **권장 사용 환경** | 대규모 운영(Production) 환경 | 중소규모 운영 / 스테이징 환경 | 클라우드 개발(Dev) / PoC 환경 | **로컬 (Docker Desktop / Minikube)** |
 
 ---
 
@@ -589,6 +595,195 @@ kubectl get pods -n monitoring -l "app.kubernetes.io/instance=tempo-dev"
 | **권장 트래픽** | 초당 수백~수만 스팬 이상 | **초당 수십 개 ~ 1,000 스팬 미만 (개발/테스트)** |
 | **전체 자원 소모** | CPU 3~5 Core, Mem 6~12GB 이상 | **CPU 0.1~0.5 Core, Mem 256~512MB** |
 | **운영 복잡도** | 컴포넌트 간 네트워크/해시링 조율 필요 | **설정 및 트러블슈팅 극도로 단순** |
+
+---
+
+### 2.4 로컬(Docker Desktop / Minikube) 단일 모드 배포 (GCS 미사용, 기본 스토리지)
+
+클라우드(GCP) 계정, GCS 버킷, Workload Identity 인증 구성 없이 **Docker Desktop Kubernetes, Minikube, Kind 등의 로컬 클러스터**에서 가장 간편하게 Tempo와 Grafana를 배포하여 테스트할 수 있는 구성입니다.
+
+- **GCS 미사용**: 트레이스 블록과 WAL 데이터를 로컬 디스크(`backend: local`)에 직접 저장합니다.
+- **클러스터 기본 스토리지 클래스 활용**: `storageClassName`을 명시하지 않고 생략하여 Docker Desktop의 `hostpath` 등 기본 스토리지 클래스를 자동으로 바인딩합니다.
+- **최소 리소스 할당**: 단일 파드 1대로 구동되며 CPU 100m, Memory 256Mi 수준의 최소 자원만 사용합니다.
+
+#### 2.4.1 Helm `tempo-dev-no-gcs-values.yaml` 작성
+
+GCS 관련 설정 및 ServiceAccount 주석을 비활성화하고 순수 로컬 스토리지만 활성화한 설정 파일입니다.
+
+```yaml
+serviceAccount:
+  create: true
+  name: "tempo-dev"
+  # GCS 연동 및 Workload Identity 미사용으로 주석 처리
+  # annotations:
+  #   iam.gke.io/gcp-service-account: "tempo-dev-gcs-sa@<GCP_프로젝트_ID>.iam.gserviceaccount.com"
+
+# -------------------------------------------------------------
+# 단일 바이너리(Monolithic) Tempo 핵심 엔진 설정
+# -------------------------------------------------------------
+tempo:
+  multitenancyEnabled: false
+
+  # 1. 수신 프로토콜 (OTLP gRPC 4317 및 HTTP 4318 활성화)
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+        http:
+          endpoint: "0.0.0.0:4318"
+
+  # 2. 로컬 개발 환경 인제스터 튜닝
+  ingester:
+    max_block_duration: 30m       # 30분 단위 블록 생성
+    max_block_bytes: 67108864     # 64MB 도달 시 플러시
+    complete_block_timeout: 15m
+    trace_idle_period: 10s
+
+  # 3. 데이터 보존 기간 (로컬 개발 환경: 24시간)
+  compactor:
+    compaction:
+      block_retention: 24h
+
+  # 4. 순수 로컬 스토리지 백엔드 설정 (GCS 미사용)
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /var/tempo/traces
+      wal:
+        path: /var/tempo/wal
+
+# -------------------------------------------------------------
+# 파드 및 스토리지 리소스 설정 (단일 파드 1 Replica)
+# -------------------------------------------------------------
+replicas: 1
+
+persistence:
+  enabled: true
+  size: 5Gi                      # 로컬 PV용 5Gi 할당
+  # storageClassName을 지정하지 않으면 클러스터 기본(Default) SC 자동 사용
+  # storageClassName: "standard-rwo"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+```
+
+#### 2.4.2 Grafana 연동용 `grafana-dev-values.yaml` 작성
+
+로컬 단일 모드 Tempo(`http://tempo-dev.monitoring.svc.cluster.local:3200`)와 연결되고, 로컬 RWO PVC 환경에서 볼륨 락 충돌 없이 안정적으로 기동되도록 설정한 Grafana 매니페스트입니다.
+
+```yaml
+# -------------------------------------------------------------
+# 관리자(Admin) 계정 설정
+# -------------------------------------------------------------
+adminUser: "admin"
+adminPassword: "StrongAdminPassword123!"
+
+# -------------------------------------------------------------
+# 데이터소스 자동 프로비저닝 (Datasource Provisioning)
+# -------------------------------------------------------------
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Tempo
+        type: tempo
+        access: proxy
+        orgId: 1
+        # [중요] 단일 모드(tempo-dev)의 기본 HTTP 포트는 3200입니다:
+        url: http://tempo-dev.monitoring.svc.cluster.local:3200
+        isDefault: true
+        version: 1
+        editable: true
+        jsonData:
+          httpMethod: GET
+          nodeGraph:
+            enabled: true
+          search:
+            hide: false
+          traceQuery:
+            timeShiftEnabled: true
+            spanBar:
+              type: "Tag"
+              tag: "http.status_code"
+
+# -------------------------------------------------------------
+# 서비스 노출 설정
+# -------------------------------------------------------------
+service:
+  enabled: true
+  type: LoadBalancer # Docker Desktop 환경에서는 자동으로 localhost 포트 바인딩 지원
+  port: 80
+  targetPort: 3000
+
+# -------------------------------------------------------------
+# 배포 전략 및 초기화 설정 (RWO PVC 환경)
+# -------------------------------------------------------------
+deploymentStrategy:
+  type: Recreate
+
+initChownData:
+  enabled: false
+
+# -------------------------------------------------------------
+# 영구 스토리지(PVC) 설정 (로컬 기본 SC 사용)
+# -------------------------------------------------------------
+persistence:
+  enabled: true
+  size: 10Gi
+  # storageClassName을 생략하여 로컬 기본 SC 자동 바인딩
+  accessModes:
+    - ReadWriteOnce
+
+# -------------------------------------------------------------
+# 리소스 할당
+# -------------------------------------------------------------
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+```
+
+#### 2.4.3 로컬 Helm 배포 커맨드
+
+```bash
+# 1. Grafana Helm 저장소 등록 및 최신화
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
+
+# 2. 로컬 단일 모드 Tempo 배포 (GCS 미사용, monitoring 네임스페이스)
+helm install tempo-dev grafana/tempo \
+  --namespace monitoring \
+  --create-namespace \
+  -f tempo-dev-no-gcs-values.yaml
+
+# 3. 로컬 Grafana 배포 (Tempo 데이터소스 자동 연동)
+helm install grafana grafana/grafana \
+  --namespace monitoring \
+  --create-namespace \
+  -f grafana-dev-values.yaml
+```
+
+#### 2.4.4 배포 상태 확인 및 접속
+
+```bash
+# 1. 파드 및 서비스 구동 상태 확인
+kubectl get pods,svc -n monitoring
+
+# 2. 웹 브라우저에서 Grafana 접속
+# Docker Desktop 환경: http://localhost (또는 http://localhost:80)
+# Minikube / Kind 환경: kubectl port-forward svc/grafana 3000:80 -n monitoring 후 http://localhost:3000
+# 초기 로그인: ID admin / Password StrongAdminPassword123!
+```
 
 ---
 
