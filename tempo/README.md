@@ -6,35 +6,41 @@ GKE 환경에서 트래픽 규모 및 용도(대용량 분산 / 경량 분산 / 
 
 ## 목차
 
-1. [배포 규모별 권장 아키텍처 비교](#배포-규모별-권장-아키텍처-비교)
-2. [1. 대용량 분산 모드 배포 (초당 수천 스팬 이상)](#1-대용량-분산-모드-배포-초당-수천-스팬-이상)
-   - [1.1 사전 준비: GCS 버킷 및 Workload Identity 설정](#11-사전-준비-gcs-버킷-및-workload-identity-설정)
-   - [1.2 Helm `tempo-values.yaml` 작성](#12-helm-tempo-valuesyaml-작성)
-   - [1.3 Helm 배포 커맨드](#13-helm-배포-커맨드)
-   - [1.4 배포 상태 확인 및 엔드포인트 연동](#14-배포-상태-확인-및-엔드포인트-연동)
-3. [2. 경량 분산 모드 배포 (초당 수백 스팬)](#2-경량-분산-모드-배포-초당-수백-스팬)
-   - [2.1 사전 준비: GCS 버킷 및 Workload Identity 설정](#21-사전-준비-gcs-버킷-및-workload-identity-설정)
-   - [2.2 Helm `tempo-compact-values.yaml` 작성](#22-helm-tempo-compact-valuesyaml-작성)
-   - [2.3 Helm 배포 커맨드](#23-helm-배포-커맨드)
-   - [2.4 배포 상태 확인 및 엔드포인트 연동](#24-배포-상태-확인-및-엔드포인트-연동)
-4. [3. 개발/테스트 초경량 단일 모드 배포 (초당 수십 스팬)](#3-개발테스트-초경량-단일-모드-배포-초당-수십-스팬)
-   - [3.1 사전 준비: GCS 버킷 및 Workload Identity 설정 (선택)](#31-사전-준비-gcs-버킷-및-workload-identity-설정-선택)
-   - [3.2 Helm `tempo-dev-values.yaml` 작성](#32-helm-tempo-dev-valuesyaml-작성)
-   - [3.3 Helm 배포 커맨드](#33-helm-배포-커맨드)
-   - [3.4 배포 상태 확인 및 엔드포인트 연동](#34-배포-상태-확인-및-엔드포인트-연동)
-   - [3.5 분산 모드 대비 개발 환경 이점 비교](#35-분산-모드-대비-개발-환경-이점-비교)
-5. [4. OpenTelemetry Operator 배포 및 자동 계측 (Auto-Instrumentation)](#4-opentelemetry-operator-배포-및-자동-계측-auto-instrumentation)
-   - [4.1 아키텍처 및 동작 원리](#41-아키텍처-및-동작-원리)
-   - [4.2 사전 준비: cert-manager 배포](#42-사전-준비-cert-manager-배포)
-   - [4.3 OpenTelemetry Operator 설치](#43-opentelemetry-operator-설치)
-   - [4.4 `Instrumentation` 커스텀 리소스(CR) 생성](#44-instrumentation-커스텀-리소스cr-생성)
-   - [4.5 자동 주입(Auto-Instrumentation) 활성화](#45-자동-주입auto-instrumentation-활성화)
-   - [4.6 주입 결과 검증 및 트레이스 확인](#46-주입-결과-검증-및-트레이스-확인)
-6. [참고 링크](#참고-링크)
+1. [1. 배포 규모별 권장 아키텍처 비교](#1-배포-규모별-권장-아키텍처-비교)
+2. [2. 트래픽 규모별 Grafana Tempo 배포 가이드](#2-트래픽-규모별-grafana-tempo-배포-가이드)
+   - [2.1 대용량 분산 모드 배포 (초당 수천 스팬 이상)](#21-대용량-분산-모드-배포-초당-수천-스팬-이상)
+     - [2.1.1 사전 준비: GCS 버킷 및 Workload Identity 설정](#211-사전-준비-gcs-버킷-및-workload-identity-설정)
+     - [2.1.2 Helm `tempo-values.yaml` 작성](#212-helm-tempo-valuesyaml-작성)
+     - [2.1.3 Helm 배포 커맨드](#213-helm-배포-커맨드)
+     - [2.1.4 배포 상태 확인 및 엔드포인트 연동](#214-배포-상태-확인-및-엔드포인트-연동)
+   - [2.2 경량 분산 모드 배포 (초당 수백 스팬)](#22-경량-분산-모드-배포-초당-수백-스팬)
+     - [2.2.1 사전 준비: GCS 버킷 및 Workload Identity 설정](#221-사전-준비-gcs-버킷-및-workload-identity-설정)
+     - [2.2.2 Helm `tempo-compact-values.yaml` 작성](#222-helm-tempo-compact-valuesyaml-작성)
+     - [2.2.3 Helm 배포 커맨드](#223-helm-배포-커맨드)
+     - [2.2.4 배포 상태 확인 및 엔드포인트 연동](#224-배포-상태-확인-및-엔드포인트-연동)
+   - [2.3 개발/테스트 초경량 단일 모드 배포 (초당 수십 스팬)](#23-개발테스트-초경량-단일-모드-배포-초당-수십-스팬)
+     - [2.3.1 사전 준비: GCS 버킷 및 Workload Identity 설정 (선택)](#231-사전-준비-gcs-버킷-및-workload-identity-설정-선택)
+     - [2.3.2 Helm `tempo-dev-values.yaml` 작성](#232-helm-tempo-dev-valuesyaml-작성)
+     - [2.3.3 Helm 배포 커맨드](#233-helm-배포-커맨드)
+     - [2.3.4 배포 상태 확인 및 엔드포인트 연동](#234-배포-상태-확인-및-엔드포인트-연동)
+     - [2.3.5 분산 모드 대비 개발 환경 이점 비교](#235-분산-모드-대비-개발-환경-이점-비교)
+3. [3. OpenTelemetry Operator 배포 및 자동 계측 (Auto-Instrumentation)](#3-opentelemetry-operator-배포-및-자동-계측-auto-instrumentation)
+   - [3.1 아키텍처 및 동작 원리](#31-아키텍처-및-동작-원리)
+   - [3.2 사전 준비: cert-manager 배포](#32-사전-준비-cert-manager-배포)
+   - [3.3 OpenTelemetry Operator 설치](#33-opentelemetry-operator-설치)
+   - [3.4 `Instrumentation` 커스텀 리소스(CR) 생성](#34-instrumentation-커스텀-리소스cr-생성)
+   - [3.5 자동 주입(Auto-Instrumentation) 활성화](#35-자동-주입auto-instrumentation-활성화)
+   - [3.6 주입 결과 검증 및 트레이스 확인](#36-주입-결과-검증-및-트레이스-확인)
+4. [4. Grafana Tempo 시각화를 위한 Grafana Helm 배포 가이드](#4-grafana-tempo-시각화를-위한-grafana-helm-배포-가이드)
+   - [4.1 개요 및 사전 연동 정보](#41-개요-및-사전-연동-정보)
+   - [4.2 Helm `grafana-values.yaml` 작성](#42-helm-grafana-valuesyaml-작성)
+   - [4.3 Helm 배포 커맨드](#43-helm-배포-커맨드)
+   - [4.4 접속 확인 및 시각화 사용 방법](#44-접속-확인-및-시각화-사용-방법)
+5. [5. 참고 링크](#5-참고-링크)
 
 ---
 
-## 배포 규모별 권장 아키텍처 비교
+## 1. 배포 규모별 권장 아키텍처 비교
 
 | 비교 항목 | 1. 대용량 분산 모드 | 2. 경량 분산 모드 | 3. 개발/테스트 단일 바이너리 모드 |
 | :--- | :--- | :--- | :--- |
@@ -48,11 +54,17 @@ GKE 환경에서 트래픽 규모 및 용도(대용량 분산 / 경량 분산 / 
 
 ---
 
-## 1. 대용량 분산 모드 배포 (초당 수천 스팬 이상)
+## 2. 트래픽 규모별 Grafana Tempo 배포 가이드
+
+트래픽 요구량 및 운영 환경에 따라 적합한 배포 아키텍처(분산 마이크로서비스 또는 단일 모놀리식)를 선택하여 배포합니다.
+
+---
+
+### 2.1 대용량 분산 모드 배포 (초당 수천 스팬 이상)
 
 GKE 환경에서 초당 수천 개의 스팬(Span)을 안정적으로 수집·저장하기 위해 마이크로서비스 모드(`tempo-distributed`) Helm 차트를 사용합니다. 스토리지 백엔드로 **Google Cloud Storage(GCS)**를 연동하며, 인증은 **GKE Workload Identity**를 사용하는 프로덕션 배포 구성입니다.
 
-### 1.1 사전 준비: GCS 버킷 및 Workload Identity 설정
+#### 2.1.1 사전 준비: GCS 버킷 및 Workload Identity 설정
 
 Tempo 파드가 별도의 서비스 계정 키 파일(JSON) 없이 GCS 버킷에 안전하게 접근할 수 있도록 Workload Identity를 구성합니다.
 
@@ -84,7 +96,7 @@ gcloud iam service-accounts add-iam-policy-binding ${GSA_NAME}@${PROJECT_ID}.iam
   --member="serviceAccount:${PROJECT_ID}.svc.id.goog[${NAMESPACE}/${KSA_NAME}]"
 ```
 
-### 1.2 Helm `tempo-values.yaml` 작성
+#### 2.1.2 Helm `tempo-values.yaml` 작성
 
 초당 수천 스팬 유입 환경에 맞춰 Ingester의 메모리 버퍼/플러시 주기와 각 컴포넌트의 CPU/Memory, PVC 스토리지 클래스를 최적화한 설정입니다.
 
@@ -205,7 +217,7 @@ memcached:
   enabled: true
 ```
 
-### 1.3 Helm 배포 커맨드
+#### 2.1.3 Helm 배포 커맨드
 
 ```bash
 # 1. Grafana Helm 저장소 등록 및 업데이트
@@ -219,15 +231,15 @@ helm install tempo grafana/tempo-distributed \
   -f tempo-values.yaml
 ```
 
-### 1.4 배포 상태 확인 및 엔드포인트 연동
+#### 2.1.4 배포 상태 확인 및 엔드포인트 연동
 
-#### 파드 구동 상태 확인
+##### 파드 구동 상태 확인
 ```bash
 kubectl get pods -n monitoring -l "app.kubernetes.io/instance=tempo"
 ```
 `distributor`, `ingester`, `compactor`, `querier`, `query-frontend` 파드가 모두 `Running` 상태인지 확인합니다.
 
-#### 클러스터 내부 연동 정보
+##### 클러스터 내부 연동 정보
 - **OTLP Traces 수신 엔드포인트 (OTel Collector 또는 에이전트 전송용)**:
   - gRPC: `tempo-distributor.monitoring.svc.cluster.local:4317`
   - HTTP: `tempo-distributor.monitoring.svc.cluster.local:4318`
@@ -236,13 +248,13 @@ kubectl get pods -n monitoring -l "app.kubernetes.io/instance=tempo"
 
 ---
 
-## 2. 경량 분산 모드 배포 (초당 수백 스팬)
+### 2.2 경량 분산 모드 배포 (초당 수백 스팬)
 
 초당 수백 개(약 100~900 spans/sec) 수준의 트래픽을 처리하기 위한 Grafana Tempo 경량형 배포 구성입니다. 불필요한 캐시 컴포넌트(Memcached)를 제거하고 Ingester/Distributor/Querier의 리소스 및 PVC 스펙을 최소화하여 노드 리소스와 클라우드 비용을 절감합니다.
 
 스토리지 백엔드는 Google Cloud Storage(GCS)를 사용하며, GKE Workload Identity를 통해 인증합니다.
 
-### 2.1 사전 준비: GCS 버킷 및 Workload Identity 설정
+#### 2.2.1 사전 준비: GCS 버킷 및 Workload Identity 설정
 
 ```bash
 # 1. 환경 변수 설정
@@ -272,7 +284,7 @@ gcloud iam service-accounts add-iam-policy-binding ${GSA_NAME}@${PROJECT_ID}.iam
   --member="serviceAccount:${PROJECT_ID}.svc.id.goog[${NAMESPACE}/${KSA_NAME}]"
 ```
 
-### 2.2 Helm `tempo-compact-values.yaml` 작성
+#### 2.2.2 Helm `tempo-compact-values.yaml` 작성
 
 ```yaml
 serviceAccount:
@@ -391,7 +403,7 @@ memcached:
   enabled: false
 ```
 
-### 2.3 Helm 배포 커맨드
+#### 2.2.3 Helm 배포 커맨드
 
 ```bash
 # 1. Grafana Helm 저장소 등록 및 업데이트
@@ -405,14 +417,14 @@ helm install tempo grafana/tempo-distributed \
   -f tempo-compact-values.yaml
 ```
 
-### 2.4 배포 상태 확인 및 엔드포인트 연동
+#### 2.2.4 배포 상태 확인 및 엔드포인트 연동
 
-#### 파드 구동 상태 확인
+##### 파드 구동 상태 확인
 ```bash
 kubectl get pods -n monitoring -l "app.kubernetes.io/instance=tempo"
 ```
 
-#### 클러스터 내부 연동 정보
+##### 클러스터 내부 연동 정보
 - **OTLP Traces 수신 엔드포인트 (OTel Collector 또는 에이전트 전송용)**:
   - gRPC: `tempo-distributor.monitoring.svc.cluster.local:4317`
   - HTTP: `tempo-distributor.monitoring.svc.cluster.local:4318`
@@ -421,13 +433,13 @@ kubectl get pods -n monitoring -l "app.kubernetes.io/instance=tempo"
 
 ---
 
-## 3. 개발/테스트 초경량 단일 모드 배포 (초당 수십 스팬)
+### 2.3 개발/테스트 초경량 단일 모드 배포 (초당 수십 스팬)
 
 초당 수십 개(약 10~90 spans/sec) 수준의 개발·스테이징 환경에서는 여러 파드로 나뉘는 분산 모드(`tempo-distributed`) 대신, 단일 바이너리(Monolithic / Single Binary) 형태의 **`grafana/tempo`** Helm 차트를 배포하는 것이 가장 효율적입니다.
 
 단 1개의 파드 내에 Distributor, Ingester, Querier, Compactor가 모두 포함되어 구동되므로, 노드 리소스(CPU 100m, Memory 256Mi 수준)와 클라우드 비용을 최소화할 수 있습니다.
 
-### 3.1 사전 준비: GCS 버킷 및 Workload Identity 설정 (선택)
+#### 2.3.1 사전 준비: GCS 버킷 및 Workload Identity 설정 (선택)
 
 운영 환경과 동일하게 Google Cloud Storage(GCS)를 백엔드로 사용할 경우 구성합니다. (GCS 없이 순수 로컬 디스크만 사용할 경우 이 단계는 생략 가능합니다.)
 
@@ -459,7 +471,7 @@ gcloud iam service-accounts add-iam-policy-binding ${GSA_NAME}@${PROJECT_ID}.iam
   --member="serviceAccount:${PROJECT_ID}.svc.id.goog[${NAMESPACE}/${KSA_NAME}]"
 ```
 
-### 3.2 Helm `tempo-dev-values.yaml` 작성
+#### 2.3.2 Helm `tempo-dev-values.yaml` 작성
 
 단일 바이너리 모드(`grafana/tempo`) 차트에 맞춘 설정 파일입니다. 트래픽이 적은 개발 환경의 특성을 반영하여 플러시 주기와 블록 크기를 작게 잡고, 데이터 보존 기간(Retention)을 24시간으로 설정했습니다.
 
@@ -538,7 +550,7 @@ resources:
     memory: 512Mi
 ```
 
-### 3.3 Helm 배포 커맨드
+#### 2.3.3 Helm 배포 커맨드
 
 분산 모드 차트(`tempo-distributed`)가 아닌 단일 모드 차트인 **`grafana/tempo`**를 사용합니다.
 
@@ -554,22 +566,22 @@ helm install tempo-dev grafana/tempo \
   -f tempo-dev-values.yaml
 ```
 
-### 3.4 배포 상태 확인 및 엔드포인트 연동
+#### 2.3.4 배포 상태 확인 및 엔드포인트 연동
 
-#### 파드 구동 상태 확인
+##### 파드 구동 상태 확인
 ```bash
 kubectl get pods -n monitoring -l "app.kubernetes.io/instance=tempo-dev"
 ```
 단 1개의 파드(`tempo-dev-0` 또는 `tempo-dev-xxxxx`)가 `Running` 상태로 기동됩니다.
 
-#### 클러스터 내부 연동 정보
+##### 클러스터 내부 연동 정보
 - **OTLP Traces 수신 엔드포인트 (애플리케이션 에이전트 또는 OTel Collector 연동)**:
   - gRPC: `tempo-dev.monitoring.svc.cluster.local:4317`
   - HTTP: `tempo-dev.monitoring.svc.cluster.local:4318`
 - **Grafana 대시보드 데이터소스(Tempo) 연결 주소**:
   - URL: `http://tempo-dev.monitoring.svc.cluster.local:3100`
 
-### 3.5 분산 모드 대비 개발 환경 이점 비교
+#### 2.3.5 분산 모드 대비 개발 환경 이점 비교
 
 | 비교 항목 | 분산 모드 (`tempo-distributed`) | 단일 바이너리 모드 (`grafana/tempo`) |
 | :--- | :--- | :--- |
@@ -580,11 +592,11 @@ kubectl get pods -n monitoring -l "app.kubernetes.io/instance=tempo-dev"
 
 ---
 
-## 4. OpenTelemetry Operator 배포 및 자동 계측 (Auto-Instrumentation)
+## 3. OpenTelemetry Operator 배포 및 자동 계측 (Auto-Instrumentation)
 
 수집 대상이 되는 쿠버네티스(GKE 및 온프레미스 Cilium) 클러스터에 **OpenTelemetry Operator**를 설치하고, 애플리케이션 코드 수정 없이 파드 기동 시점에 런타임 에이전트를 자동으로 주입(Auto-Instrumentation)하여 분산 트레이스 데이터를 수집·전송하는 절차입니다.
 
-### 4.1 아키텍처 및 동작 원리
+### 3.1 아키텍처 및 동작 원리
 
 ```text
 [1. 배포 요청] kubectl apply (Pod / Deployment)
@@ -607,7 +619,7 @@ kubectl get pods -n monitoring -l "app.kubernetes.io/instance=tempo-dev"
 - **OpenTelemetry Operator**: Mutating Admission Webhook을 통해 파드의 스펙을 감지하고, 해당 언어(Java, Python, Node.js, Go, .NET 등)에 맞는 에이전트를 `initContainer`를 통해 애플리케이션 컨테이너의 파일시스템에 자동 공유·주입합니다.
 - **cert-manager 필수 요구**: 쿠버네티스 Webhook의 보안 통신(TLS 인증서)을 위해 `cert-manager`가 클러스터에 먼저 설치되어 있어야 합니다.
 
-### 4.2 사전 준비: cert-manager 배포
+### 3.2 사전 준비: cert-manager 배포
 
 Webhook TLS 인증서 자동 발급을 위해 `cert-manager`를 설치합니다. (이미 클러스터에 설치되어 있다면 이 단계는 건너뜁니다.)
 
@@ -627,7 +639,7 @@ helm install cert-manager jetstack/cert-manager \
 kubectl get pods -n cert-manager
 ```
 
-### 4.3 OpenTelemetry Operator 설치
+### 3.3 OpenTelemetry Operator 설치
 
 공식 Helm 차트를 사용하여 OpenTelemetry Operator를 배포합니다.
 
@@ -647,7 +659,7 @@ kubectl get pods -n opentelemetry-operator-system
 kubectl get crd | grep opentelemetry
 ```
 
-### 4.4 `Instrumentation` 커스텀 리소스(CR) 생성
+### 3.4 `Instrumentation` 커스텀 리소스(CR) 생성
 
 `Instrumentation` CR은 주입될 에이전트의 종류, 수집 대상 트레이스를 전송할 백엔드(OTel Collector 또는 Grafana Tempo) 주소, 환경 변수 기본값을 정의합니다.
 
@@ -712,7 +724,7 @@ spec:
 kubectl apply -f instrumentation.yaml
 ```
 
-### 4.5 자동 주입(Auto-Instrumentation) 활성화
+### 3.5 자동 주입(Auto-Instrumentation) 활성화
 
 파드에 에이전트를 자동 주입하는 방식은 **네임스페이스 단위**와 **워크로드(Deployment/Pod) 단위** 중 선택할 수 있습니다.
 
@@ -766,7 +778,7 @@ spec:
             - containerPort: 8080
 ```
 
-### 4.6 주입 결과 검증 및 트레이스 확인
+### 3.6 주입 결과 검증 및 트레이스 확인
 
 #### 1) 파드 주입 상태 검사
 배포 후 애플리케이션 파드가 재생성되면 파드 상세 정보를 조회합니다.
@@ -796,29 +808,17 @@ kubectl logs -f <파드_이름> -c payment-container -n default
 
 ---
 
-## 참고 링크
-
-- [Google Cloud Workload Identity 공식 가이드](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity)
-- [Grafana Tempo Helm Charts 공식 리포지토리](https://github.com/grafana/helm-charts/tree/main/charts/tempo-distributed)
-- [Grafana Tempo 단일 바이너리 Helm Chart 공식 리포지토리](https://github.com/grafana/helm-charts/tree/main/charts/tempo)
-- [cert-manager 공식 설치 가이드](https://cert-manager.io/docs/installation/)
-- [OpenTelemetry Operator Helm Chart 공식 리포지토리](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-operator)
-- [OpenTelemetry Operator Instrumentation CRD 공식 문서](https://opentelemetry.io/docs/kubernetes/operator/crds/#instrumentation)
-
-
----
-
-# Grafana Tempo 시각화를 위한 Grafana Helm 배포 가이드
+## 4. Grafana Tempo 시각화를 위한 Grafana Helm 배포 가이드
 
 본 문서는 쿠버네티스 클러스터에 배포된 Grafana Tempo의 트레이스 데이터를 조회 및 시각화하기 위해 **Grafana를 Helm으로 배포**하고, **Tempo 데이터소스를 자동으로 프로비저닝(Datasource Provisioning)**하는 설정 가이드입니다.
 
 ---
 
-## 1. 개요 및 사전 연동 정보
+### 4.1 개요 및 사전 연동 정보
 
 Grafana가 구동될 때 수동으로 UI에서 데이터소스를 추가할 필요 없이, Helm의 `datasources.yaml` 프로비저닝 기능을 통해 Tempo 연결을 자동화합니다.
 
-### 대상 Tempo 엔드포인트
+#### 대상 Tempo 엔드포인트
 - **분산 모드 (`tempo-distributed`) 배포 시**:
   - `http://tempo-query-frontend.monitoring.svc.cluster.local:3100`
 - **단일 모드 (`tempo` / `tempo-dev`) 배포 시**:
@@ -826,7 +826,7 @@ Grafana가 구동될 때 수동으로 UI에서 데이터소스를 추가할 필�
 
 ---
 
-## 2. Helm `grafana-values.yaml` 작성
+### 4.2 Helm `grafana-values.yaml` 작성
 
 Tempo 데이터소스 설정(TraceQL 지원, 노드 그래프, 서비스 그래프 등)과 기본 영구 디스크(PVC), 관리자 계정을 정의한 매니페스트입니다.
 
@@ -905,12 +905,9 @@ resources:
     memory: 1Gi
 ```
 
-- [Grafana Helm Chart 공식 리포지토리](https://github.com/grafana/helm-charts/tree/main/charts/grafana)
-- [Grafana Tempo 데이터소스 설정 공식 문서](https://grafana.com/docs/grafana/latest/datasources/tempo/)
-
 ---
 
-## 3. Helm 배포 커맨드
+### 4.3 Helm 배포 커맨드
 
 Grafana 공식 Helm 저장소를 추가하고 네임스페이스에 배포합니다.
 
@@ -928,9 +925,9 @@ helm install grafana grafana/grafana \
 
 ---
 
-## 4. 접속 확인 및 시각화 사용 방법
+### 4.4 접속 확인 및 시각화 사용 방법
 
-### 4.1 파드 및 외부 IP 확인
+#### 4.4.1 파드 및 외부 IP 확인
 ```bash
 # 파드 구동 상태 확인
 kubectl get pods -n monitoring -l "app.kubernetes.io/name=grafana"
@@ -943,12 +940,12 @@ kubectl get svc grafana -n monitoring
   kubectl port-forward svc/grafana 3000:80 -n monitoring
   ```
 
-### 4.2 로그인
+#### 4.4.2 로그인
 - **접속 주소**: `http://<EXTERNAL-IP>` 또는 `http://localhost:3000`
 - **ID**: `admin`
 - **Password**: `StrongAdminPassword123!` (`grafana-values.yaml`에 정의한 값)
 
-### 4.3 Tempo 트레이스 조회 (Explore)
+#### 4.4.3 Tempo 트레이스 조회 (Explore)
 1. 좌측 메뉴에서 **Explore** (나침반 아이콘)를 클릭합니다.
 2. 상단 데이터소스 선택 창에서 프로비저닝된 **Tempo**를 선택합니다.
 3. **Search** 탭:
@@ -965,3 +962,16 @@ kubectl get svc grafana -n monitoring
      { span.db.statement =~ ".*SELECT.*" }
      ```
 5. 특정 트레이스를 클릭하면 **워터폴(Waterfall) 차트**와 함께 **노드 그래프(Node Graph)**가 펼쳐지며, 마이크로서비스 간의 병목 구간과 내부 호출 스택이 상세히 시각화됩니다.
+
+---
+
+## 5. 참고 링크
+
+- [Google Cloud Workload Identity 공식 가이드](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity)
+- [Grafana Tempo Helm Charts 공식 리포지토리](https://github.com/grafana/helm-charts/tree/main/charts/tempo-distributed)
+- [Grafana Tempo 단일 바이너리 Helm Chart 공식 리포지토리](https://github.com/grafana/helm-charts/tree/main/charts/tempo)
+- [cert-manager 공식 설치 가이드](https://cert-manager.io/docs/installation/)
+- [OpenTelemetry Operator Helm Chart 공식 리포지토리](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-operator)
+- [OpenTelemetry Operator Instrumentation CRD 공식 문서](https://opentelemetry.io/docs/kubernetes/operator/crds/#instrumentation)
+- [Grafana Helm Chart 공식 리포지토리](https://github.com/grafana/helm-charts/tree/main/charts/grafana)
+- [Grafana Tempo 데이터소스 설정 공식 문서](https://grafana.com/docs/grafana/latest/datasources/tempo/)
