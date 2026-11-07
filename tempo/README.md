@@ -579,7 +579,7 @@ kubectl get pods -n monitoring -l "app.kubernetes.io/instance=tempo-dev"
   - gRPC: `tempo-dev.monitoring.svc.cluster.local:4317`
   - HTTP: `tempo-dev.monitoring.svc.cluster.local:4318`
 - **Grafana 대시보드 데이터소스(Tempo) 연결 주소**:
-  - URL: `http://tempo-dev.monitoring.svc.cluster.local:3100`
+  - URL: `http://tempo-dev.monitoring.svc.cluster.local:3200`
 
 #### 2.3.5 분산 모드 대비 개발 환경 이점 비교
 
@@ -821,8 +821,8 @@ Grafana가 구동될 때 수동으로 UI에서 데이터소스를 추가할 필�
 #### 대상 Tempo 엔드포인트
 - **분산 모드 (`tempo-distributed`) 배포 시**:
   - `http://tempo-query-frontend.monitoring.svc.cluster.local:3100`
-- **단일 모드 (`tempo` / `tempo-dev`) 배포 시**:
-  - `http://tempo-dev.monitoring.svc.cluster.local:3100` (또는 `http://tempo.monitoring.svc.cluster.local:3100`)
+- **단일 모드 (`tempo` / `tempo-dev`) 배포 시 (기본 포트: 3200)**:
+  - `http://tempo-dev.monitoring.svc.cluster.local:3200` (또는 `http://tempo.monitoring.svc.cluster.local:3200`)
 
 ---
 
@@ -851,8 +851,8 @@ datasources:
         # [중요] Tempo 모드에 따른 URL 지정:
         # 1) 분산 모드(tempo-distributed)인 경우:
         url: http://tempo-query-frontend.monitoring.svc.cluster.local:3100
-        # 2) 단일 모드(tempo-dev)인 경우 아래 주소 사용:
-        # url: http://tempo-dev.monitoring.svc.cluster.local:3100
+        # 2) 단일 모드(tempo-dev)인 경우 아래 주소 사용 (기본 포트: 3200):
+        # url: http://tempo-dev.monitoring.svc.cluster.local:3200
         isDefault: true
         version: 1
         editable: true
@@ -882,6 +882,15 @@ service:
   type: LoadBalancer # 외부 접속용 (내부 전용일 경우 ClusterIP로 설정 후 port-forward 사용)
   port: 80
   targetPort: 3000
+
+# -------------------------------------------------------------
+# 배포 전략 및 초기화 설정 (RWO PVC 환경)
+# -------------------------------------------------------------
+deploymentStrategy:
+  type: Recreate
+
+initChownData:
+  enabled: false
 
 # -------------------------------------------------------------
 # 영구 스토리지(PVC) 설정 (대시보드 및 설정 영구 보존)
