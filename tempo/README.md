@@ -125,7 +125,7 @@ helm repo update
 ```
 
 ### 2.1 [Kafka-1] HA 멀티 노드 Kafka KRaft (시나리오 1용 - GKE 프로덕션, 초당 2만건 대응)
-Controller와 Broker 역할을 분리하고, 초당 2만건(20,000 spans/sec)의 대규모 트래픽 유입에 맞춰 파티션 12개, LZ4 압축, SSD 스토리지 및 PageCache를 최적화합니다.
+Controller와 Broker 역할을 분리하고, 초당 2만건(20,000 spans/sec)의 대규모 트래픽 유입에 맞춰 파티션 6개(Tempo 백엔드 1:1 매핑), LZ4 압축, SSD 스토리지 및 PageCache를 최적화합니다.
 
 ```bash
 cat << 'EOF' > kafka-ha-values.yaml
@@ -181,9 +181,9 @@ broker:
     enabled: true
     minAvailable: 2
 
-# 3. 브로커 내부 파라미터 (20k spans/sec 최적화)
+# 3. 브로커 내부 파라미터 (20k spans/sec 최적화, 파티션 6개 매핑)
 extraConfig: |
-  num.partitions=12
+  num.partitions=6
   default.replication.factor=3
   min.insync.replicas=2
   unclean.leader.election.enable=false
@@ -384,33 +384,33 @@ distributor:
 
 blockBuilder:
   enabled: true
-  replicas: 4
-  persistence:
-    enabled: true
-    size: 50Gi
-    storageClass: "premium-rwo"
-  resources:
-    requests:
-      cpu: "1500m"
-      memory: "3Gi"
-    limits:
-      cpu: "3000m"
-      memory: "6Gi"
-
-liveStore:
-  enabled: true
-  replicas: 4
+  replicas: 6 # Kafka 토픽 파티션 수(6개)와 1:1 매핑
   persistence:
     enabled: true
     size: 30Gi
     storageClass: "premium-rwo"
   resources:
     requests:
-      cpu: "1500m"
-      memory: "4Gi"
+      cpu: "1000m"
+      memory: "2Gi"
     limits:
-      cpu: "3000m"
-      memory: "8Gi"
+      cpu: "2000m"
+      memory: "4Gi"
+
+liveStore:
+  enabled: true
+  replicas: 6 # Kafka 토픽 파티션 수(6개)와 1:1 매핑 (최근 트레이스 100% 서빙)
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: "premium-rwo"
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: "3Gi"
+    limits:
+      cpu: "2000m"
+      memory: "5Gi"
 
 backendScheduler:
   enabled: true

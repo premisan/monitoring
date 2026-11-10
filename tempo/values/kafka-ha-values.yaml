@@ -50,9 +50,9 @@ broker:
     enabled: true
     minAvailable: 2
 
-# 3. 브로커 내부 파라미터 (20k spans/sec 최적화)
+# 3. 브로커 내부 파라미터 (20k spans/sec 최적화, 파티션 6개 구성)
 extraConfig: |
-  num.partitions=12
+  num.partitions=6
   default.replication.factor=3
   min.insync.replicas=2
   unclean.leader.election.enable=false

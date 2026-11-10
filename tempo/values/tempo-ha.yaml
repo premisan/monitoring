@@ -45,33 +45,33 @@ distributor:
 
 blockBuilder:
   enabled: true
-  replicas: 4
-  persistence:
-    enabled: true
-    size: 50Gi
-    storageClass: "premium-rwo"
-  resources:
-    requests:
-      cpu: "1500m"
-      memory: "3Gi"
-    limits:
-      cpu: "3000m"
-      memory: "6Gi"
-
-liveStore:
-  enabled: true
-  replicas: 4
+  replicas: 6 # Kafka 토픽 파티션 수(6개)와 1:1 매핑
   persistence:
     enabled: true
     size: 30Gi
     storageClass: "premium-rwo"
   resources:
     requests:
-      cpu: "1500m"
-      memory: "4Gi"
+      cpu: "1000m"
+      memory: "2Gi"
     limits:
-      cpu: "3000m"
-      memory: "8Gi"
+      cpu: "2000m"
+      memory: "4Gi"
+
+liveStore:
+  enabled: true
+  replicas: 6 # Kafka 토픽 파티션 수(6개)와 1:1 매핑 (최근 트레이스 100% 서빙)
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: "premium-rwo"
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: "3Gi"
+    limits:
+      cpu: "2000m"
+      memory: "5Gi"
 
 backendScheduler:
   enabled: true
