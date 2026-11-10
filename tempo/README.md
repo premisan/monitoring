@@ -242,9 +242,9 @@ helm upgrade --install tempo-kafka bitnami/kafka \
 
 ## 3. 세 가지 시나리오별 Grafana Tempo 3.x Helm 배포 가이드
 
-Grafana 공식 Helm 저장소를 추가합니다:
+Tempo 3.x(Kafka WAL 기반 Decoupled 아키텍처) 공식 커뮤니티 Helm 저장소를 추가합니다:
 ```bash
-helm repo add grafana https://grafana.github.io/helm-charts
+helm repo add grafana-community https://grafana-community.github.io/helm-charts
 helm repo update
 ```
 
@@ -295,14 +295,6 @@ traces:
       enabled: true
     http:
       enabled: true
-
-# 3.x에서는 Ingester/Compactor가 제거되고 Block-Builder/Live-Store로 대체되므로 2.x 레거시 비활성화
-ingester:
-  enabled: false
-compactor:
-  enabled: false
-memcached:
-  enabled: false
 
 tempo:
   structuredConfig:
@@ -397,7 +389,7 @@ queryFrontend:
 
 #### 3) 배포 실행
 ```bash
-helm upgrade --install tempo grafana/tempo-distributed \
+helm upgrade --install tempo grafana-community/tempo-distributed \
   --namespace monitoring \
   -f values/tempo-ha.yaml
 ```
@@ -423,14 +415,6 @@ traces:
       enabled: true
     http:
       enabled: true
-
-# 3.x에서는 Ingester/Compactor가 제거되고 Block-Builder/Live-Store로 대체되므로 2.x 레거시 비활성화
-ingester:
-  enabled: false
-compactor:
-  enabled: false
-memcached:
-  enabled: false
 
 tempo:
   structuredConfig:
@@ -489,7 +473,7 @@ queryFrontend:
 
 #### 2) 배포 실행
 ```bash
-helm upgrade --install tempo grafana/tempo-distributed \
+helm upgrade --install tempo grafana-community/tempo-distributed \
   --namespace monitoring \
   -f values/tempo-dev-gcs.yaml
 ```
@@ -509,14 +493,6 @@ traces:
       enabled: true
     http:
       enabled: true
-
-# 3.x에서는 Ingester/Compactor가 제거되고 Block-Builder/Live-Store로 대체되므로 2.x 레거시 비활성화
-ingester:
-  enabled: false
-compactor:
-  enabled: false
-memcached:
-  enabled: false
 
 tempo:
   structuredConfig:
@@ -573,7 +549,7 @@ queryFrontend:
 
 #### 2) 배포 실행
 ```bash
-helm upgrade --install tempo grafana/tempo-distributed \
+helm upgrade --install tempo grafana-community/tempo-distributed \
   --namespace monitoring \
   -f values/tempo-local.yaml
 ```
@@ -1008,4 +984,4 @@ if __name__ == "__main__":
    - `ErrImagePull` 발생 시 values 파일에 `image.repository: bitnamilegacy/kafka`를 지정하거나 배포 커맨드에 `--set image.repository=bitnamilegacy/kafka`를 추가하세요.
 6. **`tempo-distributor` 서비스에 OTLP 포트(4317, 4318) 미노출**:
    - Helm 차트 템플릿상 `traces.otlp.grpc.enabled: true` 및 `traces.otlp.http.enabled: true`가 선언되어야 Kubernetes Service에 4317/4318 포트가 매핑됩니다.
-   - 또한 차트 기본값으로 생성되는 2.x 레거시 컴포넌트를 방지하려면 `ingester.enabled: false`, `compactor.enabled: false`, `memcached.enabled: false`를 함께 설정해야 합니다.
+   - 반드시 3.x 공식 커뮤니티 차트인 **`grafana-community/tempo-distributed`**를 사용해야 합니다. (구버전 `grafana/tempo-distributed`는 2.9.0에서 동결됨)

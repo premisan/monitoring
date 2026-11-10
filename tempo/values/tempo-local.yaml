@@ -6,14 +6,6 @@ traces:
     http:
       enabled: true
 
-# 3.x에서는 Ingester/Compactor가 제거되고 Block-Builder/Live-Store로 대체되므로 2.x 레거시 비활성화
-ingester:
-  enabled: false
-compactor:
-  enabled: false
-memcached:
-  enabled: false
-
 tempo:
   structuredConfig:
     multitenancy_enabled: false
