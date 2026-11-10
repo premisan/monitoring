@@ -17,7 +17,7 @@ tempo:
               endpoint: "0.0.0.0:4318"
     ingest:
       kafka:
-        address: "kafka.tracing.svc.cluster.local:9092"
+        address: "tempo-kafka.monitoring.svc.cluster.local:9092"
         topic: "tempo-traces"
     storage:
       trace:

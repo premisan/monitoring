@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: tempo-ingest-lb
-  namespace: tracing
+  namespace: monitoring
 spec:
   type: LoadBalancer
   selector:
@@ -20,7 +20,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: tempo-query-lb
-  namespace: tracing
+  namespace: monitoring
 spec:
   type: LoadBalancer
   selector:

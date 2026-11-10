@@ -1,6 +1,8 @@
 # Grafana Tempo 3.x & OpenTelemetry 배포 및 운영 가이드
 
-GKE 및 로컬 쿠버네티스(Docker Desktop / Podman Desktop) 환경에서 **Grafana Tempo 3.x(Kafka 기반 Decoupled 아키텍처)** 배포 가이드입니다. 
+GKE 및 로컬 쿠버네티스(Docker Desktop / Podman Desktop) 환경에서 **Grafana Tempo 3.x(Kafka 기반 Decoupled 아키텍처)** 배포 가이드입니다.
+
+본 가이드의 모든 리소스(Kafka 브로커 및 Tempo 마이크로서비스)는 **`monitoring` 네임스페이스**에 배포되며, 전용 Kafka 클러스터는 **`tempo-kafka`** 명명 규칙을 따릅니다.
 
 아직 구성된 Tempo가 없다는 전제 하에 세 가지 배포 시나리오(대규모 HA 프로덕션 / GKE 개발 환경 / 로컬 노트북)를 제공하며, **Grafana 연동**(기존 Grafana 추가 및 신규 Helm 프로비저닝), **네트워크 외부 노출**(Istio VirtualService 및 로컬 LoadBalancer), 그리고 **애플리케이션 계측**(OpenTelemetry Operator 자동 주입 및 소스 코드 SDK 직접 구현)까지 전체 파이프라인을 다룹니다.
 
@@ -12,7 +14,7 @@ GKE 및 로컬 쿠버네티스(Docker Desktop / Podman Desktop) 환경에서 **G
    - [1.1 왜 3.x 아키텍처로 변경되었는가?](#11-왜-3x-아키텍처로-변경되었는가)
    - [1.2 핵심 컴포넌트 변화 (What's New, Removed)](#12-핵심-컴포넌트-변화-whats-new-removed)
    - [1.3 세 가지 배포 시나리오 비교](#13-세-가지-배포-시나리오-비교)
-2. [사전 준비: Kafka (KRaft) 클러스터 배포](#2-사전-준비-kafka-kraft-클러스터-배포)
+2. [사전 준비: Kafka (KRaft) 클러스터 배포 (`monitoring` 네임스페이스)](#2-사전-준비-kafka-kraft-클러스터-배포-monitoring-네임스페이스)
    - [2.1 [Kafka-1] HA 멀티 노드 Kafka KRaft (시나리오 1용 - GKE 프로덕션)](#21-kafka-1-ha-멀티-노드-kafka-kraft-시나리오-1용---gke-프로덕션)
    - [2.2 [Kafka-2] 최소 3노드 Kafka KRaft (시나리오 2용 - GKE 개발)](#22-kafka-2-최소-3노드-kafka-kraft-시나리오-2용---gke-개발)
    - [2.3 [Kafka-3] 싱글 파드 Kafka KRaft (시나리오 3용 - 로컬 개발)](#23-kafka-3-싱글-파드-kafka-kraft-시나리오-3용---로컬-개발)
@@ -54,7 +56,7 @@ GKE 및 로컬 쿠버네티스(Docker Desktop / Podman Desktop) 환경에서 **G
          │ (Trace ID 기반 샤딩 발행)
          ▼
  ┌──────────────────────────────────────────────┐
- │          Kafka (Durable WAL Buffer)          │
+ │     tempo-kafka (Durable WAL Buffer)         │
  └───────┬──────────────────────────────┬───────┘
          │ (컨슘)                        │ (컨슘)
          ▼                              ▼
@@ -91,7 +93,7 @@ GKE 및 로컬 쿠버네티스(Docker Desktop / Podman Desktop) 환경에서 **G
 | :--- | :---: | :--- |
 | **`Ingester`** | ❌ **제거됨** | 역할이 `Block-Builder`와 `Live-Store`로 완전히 분리되었습니다. |
 | **`Compactor`** | ❌ **제거됨** | 단일 프로세스 대신 `Backend-Scheduler`와 `Backend-Worker` 분산 잡(Job) 체계로 교체되었습니다. |
-| **`Kafka`** | ⭐️ **신규 도입** | 마이크로서비스 모드에서 Distributor와 백엔드 간 Durable Write-Ahead Log 버퍼 역할을 수행합니다. |
+| **`Kafka` (`tempo-kafka`)** | ⭐️ **신규 도입** | 마이크로서비스 모드에서 Distributor와 백엔드 간 Durable Write-Ahead Log 버퍼 역할을 수행합니다. |
 | **`Block-Builder`** | ⭐️ **신규 도입** | Kafka에서 트레이스를 소비하여 Apache Parquet 블록을 빌드하고 오브젝트 스토리지(GCS)로 플러시합니다. |
 | **`Live-Store`** | ⭐️ **신규 도입** | Kafka에서 최근 유입 데이터를 소비하여 오브젝트 스토리지에 아직 플러시되지 않은 최근 데이터를 인메모리로 서빙합니다. |
 | **`Backend-Scheduler / Worker`** | ⭐️ **신규 도입** | 블록 컴팩션 및 데이터 보존 기간(Retention) 정리 작업을 스케줄링하고 분산 워커가 실행합니다. |
@@ -103,18 +105,19 @@ GKE 및 로컬 쿠버네티스(Docker Desktop / Podman Desktop) 환경에서 **G
 | 비교 항목 | 1. HA 대규모 프로덕션 | 2. GKE 개발 환경 | 3. 로컬 쿠버네티스 (노트북) |
 | :--- | :--- | :--- | :--- |
 | **대상 트래픽** | 초당 수천 ~ 수만 스팬 | 초당 수백 스팬 (개발/스테이징) | 초당 수십 개 미만 (로컬 개발/검증) |
+| **네임스페이스** | `monitoring` | `monitoring` | `monitoring` |
 | **환경** | Google Kubernetes Engine (GKE) | Google Kubernetes Engine (GKE) | Docker Desktop / Podman Desktop |
 | **백엔드 스토리지** | Google Cloud Storage (GCS) | Google Cloud Storage (GCS) | **로컬 파일시스템 (`backend: local`)** |
 | **스토리지 인증** | GKE Workload Identity | GKE Workload Identity | 불필요 |
 | **로컬 PVC 볼륨** | 기본 SC (`standard-rwo`) | 기본 SC (`standard-rwo`) | 기본 호스트패스 (`hostpath`) |
-| **Kafka 브로커** | **멀티 파드 KRaft (Controller 3 + Broker 3)** | **최소 3개 파드 KRaft (Combined 3)** | **싱글 파드 KRaft (Combined 1)** |
+| **Kafka 클러스터명** | `tempo-kafka` (Controller 3 + Broker 3) | `tempo-kafka` (Combined 3) | `tempo-kafka` (Combined 1) |
 | **외부 노출 방식** | **Istio Gateway / VirtualService** | **Istio Gateway / VirtualService** | **Service Type: `LoadBalancer`** |
 
 ---
 
-## 2. 사전 준비: Kafka (KRaft) 클러스터 배포
+## 2. 사전 준비: Kafka (KRaft) 클러스터 배포 (`monitoring` 네임스페이스)
 
-Tempo 3.x 분산 모드는 Kafka를 Durable WAL로 사용합니다. 최신 Kafka 아키텍처에 맞춰 ZooKeeper가 필요 없는 **KRaft(Kafka Raft Metadata Mode)**로 배포합니다.
+Tempo 3.x 분산 모드는 Kafka를 Durable WAL로 사용합니다. 최신 Kafka 아키텍처에 맞춰 ZooKeeper가 필요 없는 **KRaft(Kafka Raft Metadata Mode)**로 배포하며, 릴리스 이름은 **`tempo-kafka`**, 네임스페이스는 **`monitoring`**을 사용합니다.
 
 ```bash
 helm repo add bitnami https://charts.bitnami.com/bitnami
@@ -148,12 +151,12 @@ resources:
 autoCreateTopicsEnable: true
 EOF
 
-helm upgrade --install kafka bitnami/kafka \
-  --namespace tracing \
+helm upgrade --install tempo-kafka bitnami/kafka \
+  --namespace monitoring \
   --create-namespace \
   -f kafka-ha-values.yaml
 ```
-> **내부 연결 주소**: `kafka-broker.tracing.svc.cluster.local:9092`
+> **내부 연결 주소**: `tempo-kafka-broker.monitoring.svc.cluster.local:9092`
 
 ---
 
@@ -184,12 +187,12 @@ resources:
 autoCreateTopicsEnable: true
 EOF
 
-helm upgrade --install kafka bitnami/kafka \
-  --namespace tracing \
+helm upgrade --install tempo-kafka bitnami/kafka \
+  --namespace monitoring \
   --create-namespace \
   -f kafka-dev-values.yaml
 ```
-> **내부 연결 주소**: `kafka.tracing.svc.cluster.local:9092`
+> **내부 연결 주소**: `tempo-kafka.monitoring.svc.cluster.local:9092`
 
 ---
 
@@ -216,12 +219,12 @@ resources:
 autoCreateTopicsEnable: true
 EOF
 
-helm upgrade --install kafka bitnami/kafka \
-  --namespace tracing \
+helm upgrade --install tempo-kafka bitnami/kafka \
+  --namespace monitoring \
   --create-namespace \
   -f kafka-local-values.yaml
 ```
-> **내부 연결 주소**: `kafka.tracing.svc.cluster.local:9092`
+> **내부 연결 주소**: `tempo-kafka.monitoring.svc.cluster.local:9092`
 
 ---
 
@@ -242,7 +245,7 @@ helm repo update
 export PROJECT_ID="<GCP_PROJECT_ID>"
 export REGION="asia-northeast3"
 export BUCKET_NAME="tempo-traces-${PROJECT_ID}"
-export NAMESPACE="tracing"
+export NAMESPACE="monitoring"
 export KSA_NAME="tempo"
 export GSA_NAME="tempo-gcs-sa"
 
@@ -287,10 +290,10 @@ tempo:
             http:
               endpoint: "0.0.0.0:4318"
 
-    # Kafka 브로커 연동 (Ingest 버퍼)
+    # Kafka 브로커 연동 (monitoring 네임스페이스의 tempo-kafka)
     ingest:
       kafka:
-        address: "kafka-broker.tracing.svc.cluster.local:9092"
+        address: "tempo-kafka-broker.monitoring.svc.cluster.local:9092"
         topic: "tempo-traces"
 
     # GCS 오브젝트 스토리지 연동
@@ -367,7 +370,7 @@ queryFrontend:
 #### 3) 배포 실행
 ```bash
 helm upgrade --install tempo grafana/tempo-distributed \
-  --namespace tracing \
+  --namespace monitoring \
   -f values/tempo-ha.yaml
 ```
 
@@ -398,7 +401,7 @@ tempo:
               endpoint: "0.0.0.0:4318"
     ingest:
       kafka:
-        address: "kafka.tracing.svc.cluster.local:9092"
+        address: "tempo-kafka.monitoring.svc.cluster.local:9092"
         topic: "tempo-traces"
     storage:
       trace:
@@ -443,7 +446,7 @@ queryFrontend:
 #### 2) 배포 실행
 ```bash
 helm upgrade --install tempo grafana/tempo-distributed \
-  --namespace tracing \
+  --namespace monitoring \
   -f values/tempo-dev-gcs.yaml
 ```
 
@@ -468,7 +471,7 @@ tempo:
               endpoint: "0.0.0.0:4318"
     ingest:
       kafka:
-        address: "kafka.tracing.svc.cluster.local:9092"
+        address: "tempo-kafka.monitoring.svc.cluster.local:9092"
         topic: "tempo-traces"
     storage:
       trace:
@@ -511,7 +514,7 @@ queryFrontend:
 #### 2) 배포 실행
 ```bash
 helm upgrade --install tempo grafana/tempo-distributed \
-  --namespace tracing \
+  --namespace monitoring \
   -f values/tempo-local.yaml
 ```
 
@@ -529,7 +532,7 @@ apiVersion: networking.istio.io/v1alpha3
 kind: Gateway
 metadata:
   name: tempo-gateway
-  namespace: tracing
+  namespace: monitoring
 spec:
   selector:
     istio: ingressgateway # 사용 중인 Istio Ingress Gateway Pod 레이블
@@ -560,7 +563,7 @@ apiVersion: networking.istio.io/v1alpha3
 kind: VirtualService
 metadata:
   name: tempo-vs
-  namespace: tracing
+  namespace: monitoring
 spec:
   hosts:
     - "tempo.example.com"
@@ -572,7 +575,7 @@ spec:
         - port: 4318
       route:
         - destination:
-            host: tempo-distributor.tracing.svc.cluster.local
+            host: tempo-distributor.monitoring.svc.cluster.local
             port:
               number: 4318
     # Tempo Query Frontend 라우팅
@@ -580,7 +583,7 @@ spec:
         - port: 3200
       route:
         - destination:
-            host: tempo-query-frontend.tracing.svc.cluster.local
+            host: tempo-query-frontend.monitoring.svc.cluster.local
             port:
               number: 3200
   tcp:
@@ -589,7 +592,7 @@ spec:
         - port: 4317
       route:
         - destination:
-            host: tempo-distributor.tracing.svc.cluster.local
+            host: tempo-distributor.monitoring.svc.cluster.local
             port:
               number: 4317
 ```
@@ -610,7 +613,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: tempo-ingest-lb
-  namespace: tracing
+  namespace: monitoring
 spec:
   type: LoadBalancer
   selector:
@@ -628,7 +631,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: tempo-query-lb
-  namespace: tracing
+  namespace: monitoring
 spec:
   type: LoadBalancer
   selector:
@@ -655,7 +658,7 @@ kubectl apply -f manifests/tempo-local-lb.yaml
 1. Grafana 로그인 후 좌측 메뉴의 **Connections** → **Data sources**로 이동합니다.
 2. **Add data source** 클릭 후 **Tempo**를 검색하여 선택합니다.
 3. **Connection** 설정:
-   - **GKE 클러스터 내부 연동 시**: `http://tempo-query-frontend.tracing.svc.cluster.local:3200`
+   - **GKE 클러스터 내부 연동 시**: `http://tempo-query-frontend.monitoring.svc.cluster.local:3200`
    - **외부 Istio Ingress 연동 시**: `http://tempo.example.com:3200`
    - **로컬 랩탑 연동 시**: `http://localhost:3200`
 4. **Additional settings**:
@@ -681,7 +684,7 @@ data:
         type: tempo
         access: proxy
         orgId: 1
-        url: http://tempo-query-frontend.tracing.svc.cluster.local:3200
+        url: http://tempo-query-frontend.monitoring.svc.cluster.local:3200
         isDefault: false
         jsonData:
           nodeGraph:
@@ -707,7 +710,7 @@ datasources:
       - name: Tempo
         type: tempo
         access: proxy
-        url: http://tempo-query-frontend.tracing.svc.cluster.local:3200
+        url: http://tempo-query-frontend.monitoring.svc.cluster.local:3200
         isDefault: false
         jsonData:
           nodeGraph:
@@ -763,7 +766,7 @@ metadata:
 spec:
   exporter:
     # Tempo Distributor OTLP gRPC 엔드포인트 지정
-    endpoint: http://tempo-distributor.tracing.svc.cluster.local:4317
+    endpoint: http://tempo-distributor.monitoring.svc.cluster.local:4317
   propagators:
     - tracecontext
     - baggage
@@ -852,7 +855,7 @@ provider = TracerProvider(resource=resource)
 
 # 2. OTLP gRPC Exporter 구성
 # 환경 변수에 따라 내부 통신, Istio 외부 도메인, 로컬 호스트로 유연하게 설정 가능
-tempo_endpoint = os.getenv("TEMPO_ENDPOINT", "tempo-distributor.tracing.svc.cluster.local:4317")
+tempo_endpoint = os.getenv("TEMPO_ENDPOINT", "tempo-distributor.monitoring.svc.cluster.local:4317")
 exporter = OTLPSpanExporter(endpoint=tempo_endpoint, insecure=True)
 
 # 3. 비동기 배치 Span Processor 등록
@@ -885,7 +888,7 @@ if __name__ == "__main__":
 **3) 실행 환경별 엔드포인트 지정 방법**
 - **Kubernetes 클러스터 내부**:
   ```bash
-  export TEMPO_ENDPOINT="tempo-distributor.tracing.svc.cluster.local:4317"
+  export TEMPO_ENDPOINT="tempo-distributor.monitoring.svc.cluster.local:4317"
   ```
 - **GKE 외부에서 Istio IngressGateway 경유**:
   ```bash
@@ -904,17 +907,17 @@ if __name__ == "__main__":
    - `autoCreateTopicsEnable: true`로 설정된 경우 처음 트레이스 유입 시 `tempo-traces` 토픽이 자동 생성됩니다.
    - 초당 수만 건의 트래픽을 처리하는 시나리오 1(HA 프로덕션)에서는 **파티션 수를 Block-Builder 및 Live-Store 파드 수의 배수(예: 최소 6~12개 파티션)**로 수동 생성하는 것을 권장합니다.
      ```bash
-     kubectl exec -it kafka-controller-0 -n tracing -- kafka-topics.sh \
+     kubectl exec -it tempo-kafka-controller-0 -n monitoring -- kafka-topics.sh \
        --bootstrap-server localhost:9092 \
        --alter --topic tempo-traces --partitions 12
      ```
 2. **GCS 권한 에러 (`AccessDenied / 403`)**:
    - `tempo-block-builder` 로그에 `storage.objects.create` 에러가 발생하면 GKE Workload Identity가 정상적으로 바인딩되었는지 확인합니다:
      ```bash
-     kubectl describe sa tempo -n tracing
+     kubectl describe sa tempo -n monitoring
      # Annotations에 iam.gke.io/gcp-service-account가 올바른지 확인
      ```
 3. **Live-Store 메모리 관리**:
    - Live-Store는 최근 데이터를 메모리에 캐싱하므로, 유입되는 트래픽이 많을 경우 메모리 사용량이 증가합니다. 메모리 한계에 도달하지 않도록 `liveStore.resources.limits`를 넉넉하게 설정하고 필요 시 파드 수를 수평 확장(Scale-out)하세요.
 4. **Grafana TraceQL 검색 실패**:
-   - 데이터소스 설정에서 `tempo-query-frontend` 포트 `3200`으로 정상 통신되는지 확인하고, 클러스터 내부 연동 시 `http://tempo-query-frontend.tracing.svc.cluster.local:3200`을 사용하세요.
+   - 데이터소스 설정에서 `tempo-query-frontend` 포트 `3200`으로 정상 통신되는지 확인하고, 클러스터 내부 연동 시 `http://tempo-query-frontend.monitoring.svc.cluster.local:3200`을 사용하세요.

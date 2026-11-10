@@ -18,10 +18,10 @@ tempo:
             http:
               endpoint: "0.0.0.0:4318"
 
-    # 2. Kafka WAL 브로커 연동
+    # 2. Kafka WAL 브로커 연동 (monitoring 네임스페이스의 tempo-kafka)
     ingest:
       kafka:
-        address: "kafka-broker.tracing.svc.cluster.local:9092"
+        address: "tempo-kafka-broker.monitoring.svc.cluster.local:9092"
         topic: "tempo-traces"
 
     # 3. GCS 백엔드 스토리지 설정
