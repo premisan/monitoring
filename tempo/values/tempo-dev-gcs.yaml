@@ -1,10 +1,10 @@
 serviceAccount:
   create: true
   name: "tempo"
+  automountServiceAccountToken: true
   annotations:
     iam.gke.io/gcp-service-account: "tempo-gcs-sa@<GCP_PROJECT_ID>.iam.gserviceaccount.com"
 
-# 1. Distributor Service에 OTLP gRPC(4317) 및 HTTP(4318) 포트 오픈
 traces:
   otlp:
     grpc:
@@ -12,16 +12,13 @@ traces:
     http:
       enabled: true
 
-# 2. 멀티테넌시 설정
 multitenancyEnabled: false
 
-# 3. Kafka Ingest WAL 브로커 연동
 ingest:
   kafka:
     address: "tempo-kafka.monitoring.svc.cluster.local:9092"
     topic: "tempo-traces"
 
-# 4. GCS 백엔드 스토리지 설정
 storage:
   trace:
     backend: gcs
@@ -30,7 +27,6 @@ storage:
     block:
       version: vParquet5
 
-# 5. 컴포넌트별 파드 구성
 distributor:
   replicas: 1
 

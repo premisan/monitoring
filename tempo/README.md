@@ -285,6 +285,7 @@ gcloud iam service-accounts add-iam-policy-binding ${GSA_NAME}@${PROJECT_ID}.iam
 serviceAccount:
   create: true
   name: "tempo"
+  automountServiceAccountToken: true
   annotations:
     iam.gke.io/gcp-service-account: "tempo-gcs-sa@<GCP_PROJECT_ID>.iam.gserviceaccount.com"
 
@@ -302,7 +303,7 @@ multitenancyEnabled: false
 # 3. Kafka Ingest WAL 브로커 연동 (monitoring 네임스페이스의 tempo-kafka)
 ingest:
   kafka:
-    address: "tempo-kafka-broker.monitoring.svc.cluster.local:9092"
+    address: "tempo-kafka.monitoring.svc.cluster.local:9092"
     topic: "tempo-traces"
 
 # 4. GCS 백엔드 스토리지 설정
@@ -333,7 +334,7 @@ blockBuilder:
   persistence:
     enabled: true
     size: 30Gi
-    storageClass: "standard-rwo"
+    storageClass: "premium-rwo"
   resources:
     requests:
       cpu: "1000m"
@@ -345,7 +346,7 @@ liveStore:
   persistence:
     enabled: true
     size: 20Gi
-    storageClass: "standard-rwo"
+    storageClass: "premium-rwo"
   resources:
     requests:
       cpu: "1000m"
@@ -364,7 +365,7 @@ backendWorker:
   persistence:
     enabled: true
     size: 30Gi
-    storageClass: "standard-rwo"
+    storageClass: "premium-rwo"
 
 querier:
   replicas: 3
@@ -395,6 +396,7 @@ helm upgrade --install tempo grafana-community/tempo-distributed \
 serviceAccount:
   create: true
   name: "tempo"
+  automountServiceAccountToken: true
   annotations:
     iam.gke.io/gcp-service-account: "tempo-gcs-sa@<GCP_PROJECT_ID>.iam.gserviceaccount.com"
 
@@ -595,24 +597,7 @@ spec:
   gateways:
     - tempo-gateway
   http:
-    # OTLP HTTP 트레이스 수신 라우팅
-    - match:
-        - port: 4318
-      route:
-        - destination:
-            host: tempo-distributor.monitoring.svc.cluster.local
-            port:
-              number: 4318
-    # Tempo Query Frontend 라우팅
-    - match:
-        - port: 3200
-      route:
-        - destination:
-            host: tempo-query-frontend.monitoring.svc.cluster.local
-            port:
-              number: 3200
-  tcp:
-    # OTLP gRPC 트레이스 수신 라우팅
+    # 1. OTLP gRPC 수신 라우팅 (gRPC 프로토콜 매칭)
     - match:
         - port: 4317
       route:
@@ -620,6 +605,22 @@ spec:
             host: tempo-distributor.monitoring.svc.cluster.local
             port:
               number: 4317
+    # 2. OTLP HTTP 수신 라우팅
+    - match:
+        - port: 4318
+      route:
+        - destination:
+            host: tempo-distributor.monitoring.svc.cluster.local
+            port:
+              number: 4318
+    # 3. Tempo Query Frontend 라우팅 (Grafana 외부 연동용)
+    - match:
+        - port: 3200
+      route:
+        - destination:
+            host: tempo-query-frontend.monitoring.svc.cluster.local
+            port:
+              number: 3200
 ```
 
 ```bash

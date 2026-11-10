@@ -5,23 +5,20 @@ metadata:
   namespace: monitoring
 spec:
   selector:
-    istio: ingressgateway # 사용 중인 Istio Ingress Gateway Pod 레이블
+    istio: ingressgateway
   servers:
-    # 1. OTLP gRPC 수신 포트
     - port:
         number: 4317
         name: grpc-otlp
         protocol: GRPC
       hosts:
         - "tempo.example.com"
-    # 2. OTLP HTTP 수신 포트
     - port:
         number: 4318
         name: http-otlp
         protocol: HTTP
       hosts:
         - "tempo.example.com"
-    # 3. Tempo Query 포트 (Grafana 외부 연동용)
     - port:
         number: 3200
         name: http-query
@@ -40,24 +37,6 @@ spec:
   gateways:
     - tempo-gateway
   http:
-    # OTLP HTTP 트레이스 수신 라우팅
-    - match:
-        - port: 4318
-      route:
-        - destination:
-            host: tempo-distributor.monitoring.svc.cluster.local
-            port:
-              number: 4318
-    # Tempo Query Frontend 라우팅
-    - match:
-        - port: 3200
-      route:
-        - destination:
-            host: tempo-query-frontend.monitoring.svc.cluster.local
-            port:
-              number: 3200
-  tcp:
-    # OTLP gRPC 트레이스 수신 라우팅
     - match:
         - port: 4317
       route:
@@ -65,3 +44,17 @@ spec:
             host: tempo-distributor.monitoring.svc.cluster.local
             port:
               number: 4317
+    - match:
+        - port: 4318
+      route:
+        - destination:
+            host: tempo-distributor.monitoring.svc.cluster.local
+            port:
+              number: 4318
+    - match:
+        - port: 3200
+      route:
+        - destination:
+            host: tempo-query-frontend.monitoring.svc.cluster.local
+            port:
+              number: 3200
