@@ -834,14 +834,29 @@ spec:
     type: parentbased_always_on
   python:
     env:
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+      # Tempo는 트레이스 전용이므로 메트릭/로그 전송을 비활성화하여 404 에러 방지
+      - name: OTEL_METRICS_EXPORTER
+        value: "none"
+      - name: OTEL_LOGS_EXPORTER
+        value: "none"
       - name: OTEL_EXPORTER_OTLP_INSECURE
         value: "true"
   java:
     env:
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+      - name: OTEL_METRICS_EXPORTER
+        value: "none"
       - name: OTEL_EXPORTER_OTLP_INSECURE
         value: "true"
   nodejs:
     env:
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+      - name: OTEL_METRICS_EXPORTER
+        value: "none"
       - name: OTEL_EXPORTER_OTLP_INSECURE
         value: "true"
 ```
@@ -850,6 +865,9 @@ kubectl apply -f manifests/instrumentation.yaml
 ```
 
 #### 3) 워크로드(Deployment)에 어노테이션 추가
+> [!IMPORTANT]
+> OpenTelemetry Python 자동 계측기(Auto-Instrumentation)는 **Flask, FastAPI, Django 등 WSGI/ASGI 규격의 웹 프레임워크**를 가로채어 트레이스를 생성합니다. 파이썬 표준 라이브러리의 `python -m http.server`는 계측 대상 프레임워크가 아니므로 스팬이 생성되지 않습니다.
+
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -857,7 +875,7 @@ metadata:
   name: backend-service
   namespace: default
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: backend-service
@@ -866,13 +884,17 @@ spec:
       labels:
         app: backend-service
       annotations:
-        # 언어에 맞게 자동 주입 어노테이션 지정 (python, java, nodejs, dotnet 등)
+        # Instrumentation CRD 위치 지정 (namespace/name)
         instrumentation.opentelemetry.io/inject-python: "default/tempo-instrumentation"
     spec:
       containers:
         - name: app
           image: python:3.11-slim
-          command: ["python", "-m", "http.server", "8080"]
+          # Flask 기반 초간단 웹 서버 구동 (자동 계측 대상 프레임워크)
+          command:
+            - "sh"
+            - "-c"
+            - "pip install flask && python3 -c 'from flask import Flask; app = Flask(__name__); app.route(\"/\")(lambda: \"Hello\"); app.run(host=\"0.0.0.0\", port=8080)'"
           ports:
             - containerPort: 8080
 ```

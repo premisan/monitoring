@@ -19,6 +19,9 @@ spec:
     metadata:
       labels:
         app: flask-hello-world
+      annotations:
+        # OpenTelemetry Operator 자동 주입 (monitoring 네임스페이스의 Instrumentation 참조)
+        instrumentation.opentelemetry.io/inject-python: "monitoring/default-instrumentation"
     spec:
       # 컨테이너 보안 설정 (비특권 실행)
       securityContext:

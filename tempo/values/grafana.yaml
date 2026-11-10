@@ -16,8 +16,8 @@ datasources:
         access: proxy
         orgId: 1
         # [중요] Tempo 모드에 따른 URL 지정:
-        # 1) 분산 모드(tempo-distributed)인 경우:
-        url: http://tempo-query-frontend.monitoring.svc.cluster.local:3100
+        # 1) 분산 모드(tempo-distributed)인 경우 (기본 포트: 3200):
+        url: http://tempo-query-frontend.monitoring.svc.cluster.local:3200
         # 2) 단일 모드(tempo-dev)인 경우 아래 주소 사용 (기본 포트: 3200):
         # url: http://tempo-dev.monitoring.svc.cluster.local:3200
         isDefault: true

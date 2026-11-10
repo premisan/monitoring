@@ -5,17 +5,7 @@ metadata:
 spec:
   # 트레이스 및 메트릭 전송 대상 엔드포인트 설정
   exporter:
-    # -------------------------------------------------------------
-    # [옵션 A] Tempo 백엔드로 직접 전송 (개발/경량 환경)
-    # -------------------------------------------------------------
-    # - 분산 모드: http://tempo-distributor.monitoring.svc.cluster.local:4317
-    # - 단일 모드: http://tempo-dev.monitoring.svc.cluster.local:4317
-    endpoint: http://tempo-dev.monitoring.svc.cluster.local:4317
-
-    # -------------------------------------------------------------
-    # [옵션 B] OpenTelemetry Collector 경유 전송 (운영/대규모 권장)
-    # -------------------------------------------------------------
-    # endpoint: http://otel-collector-collector.monitoring.svc.cluster.local:4317
+    endpoint: http://tempo-distributor.monitoring.svc.cluster.local:4317
 
   # 공통 샘플링 비율 (1.0 = 100% 수집, 대용량 트래픽 환경에서는 0.1~0.2 권장)
   sampler:
@@ -35,9 +25,12 @@ spec:
     env:
       - name: OTEL_TRACES_EXPORTER
         value: "otlp"
-      # [옵션 A: 직접 전송] 단일: tempo-dev:4318 / 분산: tempo-distributor:4318
+      - name: OTEL_METRICS_EXPORTER
+        value: "none"
+      - name: OTEL_LOGS_EXPORTER
+        value: "none"
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
-        value: "http://tempo-dev.monitoring.svc.cluster.local:4318"
+        value: "http://tempo-distributor.monitoring.svc.cluster.local:4318"
       # [옵션 B: Collector 경유]
       # - name: OTEL_EXPORTER_OTLP_ENDPOINT
       #   value: "http://otel-collector-collector.monitoring.svc.cluster.local:4318"
