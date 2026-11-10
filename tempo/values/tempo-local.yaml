@@ -1,0 +1,56 @@
+tempo:
+  structuredConfig:
+    multitenancy_enabled: false
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: "0.0.0.0:4317"
+            http:
+              endpoint: "0.0.0.0:4318"
+    ingest:
+      kafka:
+        address: "kafka.tracing.svc.cluster.local:9092"
+        topic: "tempo-traces"
+    storage:
+      trace:
+        backend: local
+        wal:
+          path: /var/tempo/wal
+        local:
+          path: /var/tempo/traces
+
+distributor:
+  replicas: 1
+
+blockBuilder:
+  enabled: true
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 2Gi
+
+liveStore:
+  enabled: true
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 2Gi
+
+backendScheduler:
+  enabled: true
+  replicas: 1
+
+backendWorker:
+  enabled: true
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 2Gi
+
+querier:
+  replicas: 1
+
+queryFrontend:
+  replicas: 1

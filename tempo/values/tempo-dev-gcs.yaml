@@ -1,72 +1,65 @@
 serviceAccount:
   create: true
-  name: "tempo-dev"
+  name: "tempo"
   annotations:
-    # GCS 연동 시 Workload Identity 주석 (로컬 디스크 전용 시 생략 가능)
-    iam.gke.io/gcp-service-account: "tempo-dev-gcs-sa@<GCP_프로젝트_ID>.iam.gserviceaccount.com"
+    iam.gke.io/gcp-service-account: "tempo-gcs-sa@<GCP_PROJECT_ID>.iam.gserviceaccount.com"
 
-# -------------------------------------------------------------
-# 단일 바이너리(Monolithic) Tempo 핵심 엔진 설정
-# -------------------------------------------------------------
 tempo:
-  multitenancyEnabled: false
+  structuredConfig:
+    multitenancy_enabled: false
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: "0.0.0.0:4317"
+            http:
+              endpoint: "0.0.0.0:4318"
+    ingest:
+      kafka:
+        address: "kafka.tracing.svc.cluster.local:9092"
+        topic: "tempo-traces"
+    storage:
+      trace:
+        backend: gcs
+        gcs:
+          bucket_name: "tempo-traces-<GCP_PROJECT_ID>"
+        block:
+          version: vParquet5
 
-  # 1. 수신 프로토콜 (OTLP gRPC 및 HTTP 활성화)
-  receivers:
-    otlp:
-      protocols:
-        grpc:
-          endpoint: "0.0.0.0:4317"
-        http:
-          endpoint: "0.0.0.0:4318"
+distributor:
+  replicas: 1
 
-  # 2. 개발 환경 인제스터 튜닝 (소량 데이터 즉시 저장)
-  ingester:
-    max_block_duration: 30m       # 30분 단위 블록 생성
-    max_block_bytes: 67108864     # 64MB 도달 시 플러시 (개발 환경에 최적화)
-    complete_block_timeout: 15m
-    trace_idle_period: 10s
-
-  # 3. 데이터 보존 기간 (개발 환경: 24시간)
-  compactor:
-    compaction:
-      block_retention: 24h
-
-  # 4. 스토리지 백엔드 설정
-  # [옵션 A: GCS 오브젝트 스토리지 연동 (권장)]
-  storage:
-    trace:
-      backend: gcs
-      gcs:
-        bucket_name: "<GCS_개발용_버킷_이름>"
-      wal:
-        path: /var/tempo/wal
-      local:
-        path: /var/tempo/blocks
-
-  # [옵션 B: GCS 없이 순수 로컬 PVC만 사용할 경우 (옵션 A 대신 아래 활성화)]
-  # storage:
-  #   trace:
-  #     backend: local
-  #     local:
-  #       path: /var/tempo/traces
-  #     wal:
-  #       path: /var/tempo/wal
-
-# -------------------------------------------------------------
-# 파드 및 스토리지 리소스 설정 (단일 파드 1 Replica)
-# -------------------------------------------------------------
-replicas: 1
-
-persistence:
+blockBuilder:
   enabled: true
-  size: 5Gi                      # 임시 WAL 버퍼용 표준 영구 디스크
-  storageClassName: "standard-rwo"
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: "standard-rwo"
 
-resources:
-  requests:
-    cpu: 100m
-    memory: 256Mi
-  limits:
-    cpu: 500m
-    memory: 512Mi
+liveStore:
+  enabled: true
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: "standard-rwo"
+
+backendScheduler:
+  enabled: true
+  replicas: 1
+
+backendWorker:
+  enabled: true
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: "standard-rwo"
+
+querier:
+  replicas: 1
+
+queryFrontend:
+  replicas: 1

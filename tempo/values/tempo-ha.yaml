@@ -1,0 +1,97 @@
+serviceAccount:
+  create: true
+  name: "tempo"
+  annotations:
+    iam.gke.io/gcp-service-account: "tempo-gcs-sa@<GCP_PROJECT_ID>.iam.gserviceaccount.com"
+
+tempo:
+  structuredConfig:
+    multitenancy_enabled: false
+
+    # 1. 수신 프로토콜 설정
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: "0.0.0.0:4317"
+            http:
+              endpoint: "0.0.0.0:4318"
+
+    # 2. Kafka WAL 브로커 연동
+    ingest:
+      kafka:
+        address: "kafka-broker.tracing.svc.cluster.local:9092"
+        topic: "tempo-traces"
+
+    # 3. GCS 백엔드 스토리지 설정
+    storage:
+      trace:
+        backend: gcs
+        gcs:
+          bucket_name: "tempo-traces-<GCP_PROJECT_ID>"
+        block:
+          version: vParquet5
+
+# Distributor (HPA 오토스케일링 적용)
+distributor:
+  replicas: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+
+# Block-Builder (Kafka에서 수신하여 GCS 블록 작성)
+blockBuilder:
+  enabled: true
+  replicas: 3
+  persistence:
+    enabled: true
+    size: 30Gi
+    storageClass: "standard-rwo"
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: "2Gi"
+
+# Live-Store (Kafka에서 수신하여 최근 데이터 인메모리/로컬 서빙)
+liveStore:
+  enabled: true
+  replicas: 3
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: "standard-rwo"
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: "3Gi"
+
+# Backend Scheduler & Worker (블록 컴팩션 및 보존 주기 관리)
+backendScheduler:
+  enabled: true
+  replicas: 2
+
+backendWorker:
+  enabled: true
+  replicas: 2
+  persistence:
+    enabled: true
+    size: 30Gi
+    storageClass: "standard-rwo"
+
+# Querier & Query Frontend
+querier:
+  replicas: 3
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: "1Gi"
+
+queryFrontend:
+  replicas: 2

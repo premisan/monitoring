@@ -25,19 +25,19 @@ monitoring/
 
 ---
 
-### 2) [tempo/](./tempo/README.md) - Grafana Tempo & OpenTelemetry 심화 가이드
-- **대상**: 대용량 프로덕션(GKE)부터 경량 분산, 개발용 단일 모드, 로컬 No-GCS 배포까지
+### 2) [tempo/](./tempo/README.md) - Grafana Tempo 3.x & OpenTelemetry 심화 가이드
+- **대상**: 대규모 프로덕션(GKE)부터 GKE 개발 환경, 로컬 노트북(Docker/Podman Desktop)까지
 - **특징**:
-  - **4단계 배포 아키텍처 지원**:
-    - 대용량 분산 모드 (GCS + Workload Identity, Memcached 캐싱)
-    - 경량 분산 모드 (GCS + 최소 마이크로서비스)
-    - 클라우드 개발용 단일 모드 (GCS 연동)
-    - **로컬 개발용 단일 모드 (GCS 미사용, 기본 로컬 스토리지 클래스)**
-  - **Grafana 배포 및 데이터소스 자동 프로비저닝 (TraceQL, 노드 그래프 지원)**
-  - **OpenTelemetry Operator를 통한 코드 수정 없는 자동 계측(Auto-Instrumentation)**
-  - Flask 샘플 애플리케이션 배포 및 트레이스 수집 검증
+  - **Tempo 3.x Decoupled 아키텍처 (Kafka KRaft WAL 기반 RF1 무복제 구성)**
+  - **3대 배포 시나리오 지원**:
+    - HA 대규모 프로덕션 분산 모드 (GKE + GCS + 멀티 KRaft)
+    - 개발 환경 분산 모드 (GKE + GCS + 3노드 KRaft)
+    - 로컬 쿠버네티스 모드 (로컬 파일시스템 + 싱글 KRaft)
+  - **네트워크 외부 노출**: GKE용 Istio Gateway & VirtualService / 로컬용 Service Type `LoadBalancer`
+  - **Grafana 연동**: 기존 Grafana 데이터소스 추가 및 신규 Helm 프로비저닝
+  - **애플리케이션 계측**: OpenTelemetry Operator 무코드 자동 주입 & 소스 코드 SDK 직접 구현
 
-👉 **[Grafana Tempo & OpenTelemetry 운영 가이드 바로가기](./tempo/README.md)**
+👉 **[Grafana Tempo 3.x & OpenTelemetry 운영 가이드 바로가기](./tempo/README.md)**
 
 ---
 

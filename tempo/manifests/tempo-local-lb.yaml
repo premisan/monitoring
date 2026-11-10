@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo-ingest-lb
+  namespace: tracing
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: tempo-distributed
+    app.kubernetes.io/component: distributor
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo-query-lb
+  namespace: tracing
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: tempo-distributed
+    app.kubernetes.io/component: query-frontend
+  ports:
+    - name: query-http
+      port: 3200
+      targetPort: 3200
