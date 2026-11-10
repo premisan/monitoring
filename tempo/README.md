@@ -129,6 +129,10 @@ Controller와 Broker 역할을 분리하여 대규모 트래픽 유입 시에도
 
 ```bash
 cat << 'EOF' > kafka-ha-values.yaml
+image:
+  registry: docker.io
+  repository: bitnamilegacy/kafka
+  tag: 4.0.0-debian-12-r10
 kraft:
   enabled: true
 controller:
@@ -165,6 +169,10 @@ Controller와 Broker를 하나의 파드에서 겸용하는 Combined 모드로 3
 
 ```bash
 cat << 'EOF' > kafka-dev-values.yaml
+image:
+  registry: docker.io
+  repository: bitnamilegacy/kafka
+  tag: 4.0.0-debian-12-r10
 kraft:
   enabled: true
 controller:
@@ -201,6 +209,10 @@ helm upgrade --install tempo-kafka bitnami/kafka \
 
 ```bash
 cat << 'EOF' > kafka-local-values.yaml
+image:
+  registry: docker.io
+  repository: bitnamilegacy/kafka
+  tag: 4.0.0-debian-12-r10
 kraft:
   enabled: true
 controller:
@@ -921,3 +933,6 @@ if __name__ == "__main__":
    - Live-Store는 최근 데이터를 메모리에 캐싱하므로, 유입되는 트래픽이 많을 경우 메모리 사용량이 증가합니다. 메모리 한계에 도달하지 않도록 `liveStore.resources.limits`를 넉넉하게 설정하고 필요 시 파드 수를 수평 확장(Scale-out)하세요.
 4. **Grafana TraceQL 검색 실패**:
    - 데이터소스 설정에서 `tempo-query-frontend` 포트 `3200`으로 정상 통신되는지 확인하고, 클러스터 내부 연동 시 `http://tempo-query-frontend.monitoring.svc.cluster.local:3200`을 사용하세요.
+5. **Kafka 파드 ImagePullBackOff (`docker.io/bitnami/kafka not found`)**:
+   - Broadcom/Bitnami의 정책 변경으로 Docker Hub의 무료 이미지가 `bitnamilegacy/`로 이전되었습니다.
+   - `ErrImagePull` 발생 시 values 파일에 `image.repository: bitnamilegacy/kafka`를 지정하거나 배포 커맨드에 `--set image.repository=bitnamilegacy/kafka`를 추가하세요.
