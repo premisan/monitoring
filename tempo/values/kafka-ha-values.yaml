@@ -1,0 +1,75 @@
+image:
+  registry: docker.io
+  repository: bitnamilegacy/kafka
+  tag: 4.0.0-debian-12-r10
+
+kraft:
+  enabled: true
+
+# 1. Controller 설정 (3대 쿼럼 고정, 브로커 역할 배제)
+controller:
+  replicaCount: 3
+  controllerOnly: true
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1000m"
+      memory: "2Gi"
+  persistence:
+    size: 20Gi
+    storageClass: "premium-rwo"
+
+# 2. Broker 설정 (3대 HA 구성, 초당 2만건 스팬 처리)
+broker:
+  replicaCount: 3
+  heapOpts: "-Xms4g -Xmx4g -XX:+UseG1GC -XX:MaxGCPauseMillis=20"
+  resources:
+    requests:
+      cpu: "2000m"
+      memory: "6Gi"
+    limits:
+      cpu: "4000m"
+      memory: "8Gi"
+  persistence:
+    size: 150Gi
+    storageClass: "premium-rwo"
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/component
+                  operator: In
+                  values: ["broker"]
+            topologyKey: "kubernetes.io/hostname"
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+
+# 3. 브로커 내부 파라미터 (20k spans/sec 최적화)
+extraConfig: |
+  num.partitions=12
+  default.replication.factor=3
+  min.insync.replicas=2
+  unclean.leader.election.enable=false
+
+  log.retention.hours=3
+  log.retention.check.interval.ms=300000
+  log.segment.bytes=536870912
+  log.cleanup.policy=delete
+
+  num.network.threads=4
+  num.io.threads=8
+  socket.receive.buffer.bytes=1048576
+  socket.send.buffer.bytes=1048576
+  compression.type=lz4
+
+listeners:
+  client:
+    protocol: PLAINTEXT
+
+autoCreateTopicsEnable: true

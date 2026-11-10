@@ -124,8 +124,8 @@ helm repo add bitnami https://charts.bitnami.com/bitnami
 helm repo update
 ```
 
-### 2.1 [Kafka-1] HA 멀티 노드 Kafka KRaft (시나리오 1용 - GKE 프로덕션)
-Controller와 Broker 역할을 분리하여 대규모 트래픽 유입 시에도 안정성을 보장합니다.
+### 2.1 [Kafka-1] HA 멀티 노드 Kafka KRaft (시나리오 1용 - GKE 프로덕션, 초당 2만건 대응)
+Controller와 Broker 역할을 분리하고, 초당 2만건(20,000 spans/sec)의 대규모 트래픽 유입에 맞춰 파티션 12개, LZ4 압축, SSD 스토리지 및 PageCache를 최적화합니다.
 
 ```bash
 cat << 'EOF' > kafka-ha-values.yaml
@@ -133,25 +133,76 @@ image:
   registry: docker.io
   repository: bitnamilegacy/kafka
   tag: 4.0.0-debian-12-r10
+
 kraft:
   enabled: true
+
+# 1. Controller 설정 (3대 쿼럼 고정, 브로커 역할 배제)
 controller:
   replicaCount: 3
+  controllerOnly: true
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1000m"
+      memory: "2Gi"
+  persistence:
+    size: 20Gi
+    storageClass: "premium-rwo"
+
+# 2. Broker 설정 (3대 HA 구성, 초당 2만건 스팬 처리)
 broker:
   replicaCount: 3
+  heapOpts: "-Xms4g -Xmx4g -XX:+UseG1GC -XX:MaxGCPauseMillis=20"
+  resources:
+    requests:
+      cpu: "2000m"
+      memory: "6Gi"
+    limits:
+      cpu: "4000m"
+      memory: "8Gi"
+  persistence:
+    size: 150Gi
+    storageClass: "premium-rwo"
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/component
+                  operator: In
+                  values: ["broker"]
+            topologyKey: "kubernetes.io/hostname"
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+
+# 3. 브로커 내부 파라미터 (20k spans/sec 최적화)
+extraConfig: |
+  num.partitions=12
+  default.replication.factor=3
+  min.insync.replicas=2
+  unclean.leader.election.enable=false
+
+  log.retention.hours=3
+  log.retention.check.interval.ms=300000
+  log.segment.bytes=536870912
+  log.cleanup.policy=delete
+
+  num.network.threads=4
+  num.io.threads=8
+  socket.receive.buffer.bytes=1048576
+  socket.send.buffer.bytes=1048576
+  compression.type=lz4
+
 listeners:
   client:
     protocol: PLAINTEXT
-persistence:
-  size: 50Gi
-  storageClass: "standard-rwo"
-resources:
-  requests:
-    cpu: "1000m"
-    memory: "2Gi"
-  limits:
-    cpu: "2000m"
-    memory: "4Gi"
+
 autoCreateTopicsEnable: true
 EOF
 
@@ -160,7 +211,7 @@ helm upgrade --install tempo-kafka bitnami/kafka \
   --create-namespace \
   -f kafka-ha-values.yaml
 ```
-> **내부 연결 주소**: `tempo-kafka-broker.monitoring.svc.cluster.local:9092`
+> **내부 연결 주소**: `tempo-kafka.monitoring.svc.cluster.local:9092`
 
 ---
 
@@ -315,42 +366,51 @@ storage:
     block:
       version: vParquet5
 
-# 5. 컴포넌트별 HA 스케일아웃 구성
+# 5. 초당 2만건(20k spans/sec) 기준 컴포넌트 사이징
 distributor:
-  replicas: 3
+  replicas: 4
   autoscaling:
     enabled: true
     minReplicas: 3
-    maxReplicas: 10
+    maxReplicas: 8
     targetCPUUtilizationPercentage: 70
   resources:
     requests:
-      cpu: "500m"
-      memory: "512Mi"
+      cpu: "1000m"
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"
+      memory: "2Gi"
 
 blockBuilder:
   enabled: true
-  replicas: 3
+  replicas: 4
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClass: "premium-rwo"
+  resources:
+    requests:
+      cpu: "1500m"
+      memory: "3Gi"
+    limits:
+      cpu: "3000m"
+      memory: "6Gi"
+
+liveStore:
+  enabled: true
+  replicas: 4
   persistence:
     enabled: true
     size: 30Gi
     storageClass: "premium-rwo"
   resources:
     requests:
-      cpu: "1000m"
-      memory: "2Gi"
-
-liveStore:
-  enabled: true
-  replicas: 3
-  persistence:
-    enabled: true
-    size: 20Gi
-    storageClass: "premium-rwo"
-  resources:
-    requests:
-      cpu: "1000m"
-      memory: "3Gi"
+      cpu: "1500m"
+      memory: "4Gi"
+    limits:
+      cpu: "3000m"
+      memory: "8Gi"
 
 backendScheduler:
   enabled: true
@@ -358,21 +418,25 @@ backendScheduler:
 
 backendWorker:
   enabled: true
-  replicas: 2
+  replicas: 3
   podDisruptionBudget:
     enabled: true
     maxUnavailable: 1
   persistence:
     enabled: true
-    size: 30Gi
+    size: 50Gi
     storageClass: "premium-rwo"
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: "2Gi"
 
 querier:
   replicas: 3
   resources:
     requests:
       cpu: "1000m"
-      memory: "1Gi"
+      memory: "2Gi"
 
 queryFrontend:
   replicas: 2

@@ -27,41 +27,51 @@ storage:
     block:
       version: vParquet5
 
+# 초당 2만건(20k spans/sec) 기준 컴포넌트 사이징
 distributor:
-  replicas: 3
+  replicas: 4
   autoscaling:
     enabled: true
     minReplicas: 3
-    maxReplicas: 10
+    maxReplicas: 8
     targetCPUUtilizationPercentage: 70
   resources:
     requests:
-      cpu: "500m"
-      memory: "512Mi"
+      cpu: "1000m"
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"
+      memory: "2Gi"
 
 blockBuilder:
   enabled: true
-  replicas: 3
+  replicas: 4
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClass: "premium-rwo"
+  resources:
+    requests:
+      cpu: "1500m"
+      memory: "3Gi"
+    limits:
+      cpu: "3000m"
+      memory: "6Gi"
+
+liveStore:
+  enabled: true
+  replicas: 4
   persistence:
     enabled: true
     size: 30Gi
     storageClass: "premium-rwo"
   resources:
     requests:
-      cpu: "1000m"
-      memory: "2Gi"
-
-liveStore:
-  enabled: true
-  replicas: 3
-  persistence:
-    enabled: true
-    size: 20Gi
-    storageClass: "premium-rwo"
-  resources:
-    requests:
-      cpu: "1000m"
-      memory: "3Gi"
+      cpu: "1500m"
+      memory: "4Gi"
+    limits:
+      cpu: "3000m"
+      memory: "8Gi"
 
 backendScheduler:
   enabled: true
@@ -69,21 +79,25 @@ backendScheduler:
 
 backendWorker:
   enabled: true
-  replicas: 2
+  replicas: 3
   podDisruptionBudget:
     enabled: true
     maxUnavailable: 1
   persistence:
     enabled: true
-    size: 30Gi
+    size: 50Gi
     storageClass: "premium-rwo"
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: "2Gi"
 
 querier:
   replicas: 3
   resources:
     requests:
       cpu: "1000m"
-      memory: "1Gi"
+      memory: "2Gi"
 
 queryFrontend:
   replicas: 2
