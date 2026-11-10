@@ -288,7 +288,7 @@ serviceAccount:
   annotations:
     iam.gke.io/gcp-service-account: "tempo-gcs-sa@<GCP_PROJECT_ID>.iam.gserviceaccount.com"
 
-# Distributor Service에 OTLP gRPC(4317) 및 HTTP(4318) 포트 생성
+# 1. Distributor Service에 OTLP gRPC(4317) 및 HTTP(4318) 포트 오픈
 traces:
   otlp:
     grpc:
@@ -296,36 +296,25 @@ traces:
     http:
       enabled: true
 
-tempo:
-  structuredConfig:
-    multitenancy_enabled: false
+# 2. 멀티테넌시 설정
+multitenancyEnabled: false
 
-    # OTLP 수신 엔드포인트 오픈
-    distributor:
-      receivers:
-        otlp:
-          protocols:
-            grpc:
-              endpoint: "0.0.0.0:4317"
-            http:
-              endpoint: "0.0.0.0:4318"
+# 3. Kafka Ingest WAL 브로커 연동 (monitoring 네임스페이스의 tempo-kafka)
+ingest:
+  kafka:
+    address: "tempo-kafka-broker.monitoring.svc.cluster.local:9092"
+    topic: "tempo-traces"
 
-    # Kafka 브로커 연동 (monitoring 네임스페이스의 tempo-kafka)
-    ingest:
-      kafka:
-        address: "tempo-kafka-broker.monitoring.svc.cluster.local:9092"
-        topic: "tempo-traces"
+# 4. GCS 백엔드 스토리지 설정
+storage:
+  trace:
+    backend: gcs
+    gcs:
+      bucket_name: "tempo-traces-<GCP_PROJECT_ID>"
+    block:
+      version: vParquet5
 
-    # GCS 오브젝트 스토리지 연동
-    storage:
-      trace:
-        backend: gcs
-        gcs:
-          bucket_name: "tempo-traces-<GCP_PROJECT_ID>"
-        block:
-          version: vParquet5
-
-# 1. Distributor (HPA 오토스케일링 적용)
+# 5. 컴포넌트별 HA 스케일아웃 구성
 distributor:
   replicas: 3
   autoscaling:
@@ -338,7 +327,6 @@ distributor:
       cpu: "500m"
       memory: "512Mi"
 
-# 2. Block-Builder (Kafka에서 수신하여 GCS 블록 작성)
 blockBuilder:
   enabled: true
   replicas: 3
@@ -351,7 +339,6 @@ blockBuilder:
       cpu: "1000m"
       memory: "2Gi"
 
-# 3. Live-Store (Kafka에서 수신하여 최근 데이터 인메모리 서빙)
 liveStore:
   enabled: true
   replicas: 3
@@ -364,25 +351,28 @@ liveStore:
       cpu: "1000m"
       memory: "3Gi"
 
-# 4. Backend Scheduler & Worker (블록 컴팩션 및 보존 주기 관리)
 backendScheduler:
   enabled: true
   replicas: 2
+
 backendWorker:
   enabled: true
   replicas: 2
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
   persistence:
     enabled: true
     size: 30Gi
     storageClass: "standard-rwo"
 
-# 5. Querier & Query Frontend
 querier:
   replicas: 3
   resources:
     requests:
       cpu: "1000m"
       memory: "1Gi"
+
 queryFrontend:
   replicas: 2
 ```
@@ -408,7 +398,7 @@ serviceAccount:
   annotations:
     iam.gke.io/gcp-service-account: "tempo-gcs-sa@<GCP_PROJECT_ID>.iam.gserviceaccount.com"
 
-# Distributor Service에 OTLP gRPC(4317) 및 HTTP(4318) 포트 생성
+# 1. Distributor Service에 OTLP gRPC(4317) 및 HTTP(4318) 포트 오픈
 traces:
   otlp:
     grpc:
@@ -416,31 +406,28 @@ traces:
     http:
       enabled: true
 
-tempo:
-  structuredConfig:
-    multitenancy_enabled: false
-    distributor:
-      receivers:
-        otlp:
-          protocols:
-            grpc:
-              endpoint: "0.0.0.0:4317"
-            http:
-              endpoint: "0.0.0.0:4318"
-    ingest:
-      kafka:
-        address: "tempo-kafka.monitoring.svc.cluster.local:9092"
-        topic: "tempo-traces"
-    storage:
-      trace:
-        backend: gcs
-        gcs:
-          bucket_name: "tempo-traces-<GCP_PROJECT_ID>"
-        block:
-          version: vParquet5
+# 2. 멀티테넌시 설정
+multitenancyEnabled: false
 
+# 3. Kafka Ingest WAL 브로커 연동
+ingest:
+  kafka:
+    address: "tempo-kafka.monitoring.svc.cluster.local:9092"
+    topic: "tempo-traces"
+
+# 4. GCS 백엔드 스토리지 설정
+storage:
+  trace:
+    backend: gcs
+    gcs:
+      bucket_name: "tempo-traces-<GCP_PROJECT_ID>"
+    block:
+      version: vParquet5
+
+# 5. 컴포넌트별 파드 구성
 distributor:
   replicas: 1
+
 blockBuilder:
   enabled: true
   replicas: 1
@@ -448,6 +435,7 @@ blockBuilder:
     enabled: true
     size: 10Gi
     storageClass: "standard-rwo"
+
 liveStore:
   enabled: true
   replicas: 1
@@ -455,9 +443,11 @@ liveStore:
     enabled: true
     size: 10Gi
     storageClass: "standard-rwo"
+
 backendScheduler:
   enabled: true
   replicas: 1
+
 backendWorker:
   enabled: true
   replicas: 1
@@ -465,8 +455,10 @@ backendWorker:
     enabled: true
     size: 10Gi
     storageClass: "standard-rwo"
+
 querier:
   replicas: 1
+
 queryFrontend:
   replicas: 1
 ```
@@ -486,7 +478,7 @@ GCS 없이 로컬 파일시스템 스토리지 클래스를 백엔드로 활용�
 
 #### 1) `values/tempo-local.yaml` 설정 파일 생성
 ```yaml
-# Distributor Service에 OTLP gRPC(4317) 및 HTTP(4318) 포트 생성
+# 1. Distributor Service에 OTLP gRPC(4317) 및 HTTP(4318) 포트 오픈
 traces:
   otlp:
     grpc:
@@ -494,55 +486,52 @@ traces:
     http:
       enabled: true
 
-tempo:
-  structuredConfig:
-    multitenancy_enabled: false
-    distributor:
-      receivers:
-        otlp:
-          protocols:
-            grpc:
-              endpoint: "0.0.0.0:4317"
-            http:
-              endpoint: "0.0.0.0:4318"
-    ingest:
-      kafka:
-        address: "tempo-kafka.monitoring.svc.cluster.local:9092"
-        topic: "tempo-traces"
-    storage:
-      trace:
-        backend: local
-        wal:
-          path: /var/tempo/wal
-        local:
-          path: /var/tempo/traces
+# 2. 멀티테넌시 설정
+multitenancyEnabled: false
 
-# 로컬 싱글 파드 구성
+# 3. Kafka Ingest WAL 브로커 연동 (Tempo 3.0 마이크로서비스 필수)
+ingest:
+  kafka:
+    address: "tempo-kafka.monitoring.svc.cluster.local:9092"
+    topic: "tempo-traces"
+
+# 4. 백엔드 스토리지 설정
+storage:
+  trace:
+    backend: local
+
+# 5. 컴포넌트별 파드 구성
 distributor:
   replicas: 1
+
 blockBuilder:
   enabled: true
   replicas: 1
   persistence:
     enabled: true
     size: 2Gi
+
 liveStore:
   enabled: true
   replicas: 1
   persistence:
     enabled: true
     size: 2Gi
+
 backendScheduler:
   enabled: true
   replicas: 1
+
 backendWorker:
   enabled: true
   replicas: 1
   persistence:
     enabled: true
     size: 2Gi
+
 querier:
   replicas: 1
+
 queryFrontend:
   replicas: 1
 ```

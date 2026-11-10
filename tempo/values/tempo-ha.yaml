@@ -4,7 +4,7 @@ serviceAccount:
   annotations:
     iam.gke.io/gcp-service-account: "tempo-gcs-sa@<GCP_PROJECT_ID>.iam.gserviceaccount.com"
 
-# Distributor Service에 OTLP gRPC(4317) 및 HTTP(4318) 포트 생성
+# 1. Distributor Service에 OTLP gRPC(4317) 및 HTTP(4318) 포트 오픈
 traces:
   otlp:
     grpc:
@@ -12,36 +12,25 @@ traces:
     http:
       enabled: true
 
-tempo:
-  structuredConfig:
-    multitenancy_enabled: false
+# 2. 멀티테넌시 설정
+multitenancyEnabled: false
 
-    # 1. 수신 프로토콜 설정
-    distributor:
-      receivers:
-        otlp:
-          protocols:
-            grpc:
-              endpoint: "0.0.0.0:4317"
-            http:
-              endpoint: "0.0.0.0:4318"
+# 3. Kafka Ingest WAL 브로커 연동 (monitoring 네임스페이스의 tempo-kafka)
+ingest:
+  kafka:
+    address: "tempo-kafka-broker.monitoring.svc.cluster.local:9092"
+    topic: "tempo-traces"
 
-    # 2. Kafka WAL 브로커 연동 (monitoring 네임스페이스의 tempo-kafka)
-    ingest:
-      kafka:
-        address: "tempo-kafka-broker.monitoring.svc.cluster.local:9092"
-        topic: "tempo-traces"
+# 4. GCS 백엔드 스토리지 설정
+storage:
+  trace:
+    backend: gcs
+    gcs:
+      bucket_name: "tempo-traces-<GCP_PROJECT_ID>"
+    block:
+      version: vParquet5
 
-    # 3. GCS 백엔드 스토리지 설정
-    storage:
-      trace:
-        backend: gcs
-        gcs:
-          bucket_name: "tempo-traces-<GCP_PROJECT_ID>"
-        block:
-          version: vParquet5
-
-# Distributor (HPA 오토스케일링 적용)
+# 5. 컴포넌트별 HA 스케일아웃 구성
 distributor:
   replicas: 3
   autoscaling:
@@ -54,7 +43,6 @@ distributor:
       cpu: "500m"
       memory: "512Mi"
 
-# Block-Builder (Kafka에서 수신하여 GCS 블록 작성)
 blockBuilder:
   enabled: true
   replicas: 3
@@ -67,7 +55,6 @@ blockBuilder:
       cpu: "1000m"
       memory: "2Gi"
 
-# Live-Store (Kafka에서 수신하여 최근 데이터 인메모리/로컬 서빙)
 liveStore:
   enabled: true
   replicas: 3
@@ -80,7 +67,6 @@ liveStore:
       cpu: "1000m"
       memory: "3Gi"
 
-# Backend Scheduler & Worker (블록 컴팩션 및 보존 주기 관리)
 backendScheduler:
   enabled: true
   replicas: 2
@@ -88,12 +74,14 @@ backendScheduler:
 backendWorker:
   enabled: true
   replicas: 2
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
   persistence:
     enabled: true
     size: 30Gi
     storageClass: "standard-rwo"
 
-# Querier & Query Frontend
 querier:
   replicas: 3
   resources:
