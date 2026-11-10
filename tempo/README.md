@@ -288,6 +288,22 @@ serviceAccount:
   annotations:
     iam.gke.io/gcp-service-account: "tempo-gcs-sa@<GCP_PROJECT_ID>.iam.gserviceaccount.com"
 
+# Distributor Service에 OTLP gRPC(4317) 및 HTTP(4318) 포트 생성
+traces:
+  otlp:
+    grpc:
+      enabled: true
+    http:
+      enabled: true
+
+# 3.x에서는 Ingester/Compactor가 제거되고 Block-Builder/Live-Store로 대체되므로 2.x 레거시 비활성화
+ingester:
+  enabled: false
+compactor:
+  enabled: false
+memcached:
+  enabled: false
+
 tempo:
   structuredConfig:
     multitenancy_enabled: false
@@ -400,6 +416,22 @@ serviceAccount:
   annotations:
     iam.gke.io/gcp-service-account: "tempo-gcs-sa@<GCP_PROJECT_ID>.iam.gserviceaccount.com"
 
+# Distributor Service에 OTLP gRPC(4317) 및 HTTP(4318) 포트 생성
+traces:
+  otlp:
+    grpc:
+      enabled: true
+    http:
+      enabled: true
+
+# 3.x에서는 Ingester/Compactor가 제거되고 Block-Builder/Live-Store로 대체되므로 2.x 레거시 비활성화
+ingester:
+  enabled: false
+compactor:
+  enabled: false
+memcached:
+  enabled: false
+
 tempo:
   structuredConfig:
     multitenancy_enabled: false
@@ -470,6 +502,22 @@ GCS 없이 로컬 파일시스템 스토리지 클래스를 백엔드로 활용�
 
 #### 1) `values/tempo-local.yaml` 설정 파일 생성
 ```yaml
+# Distributor Service에 OTLP gRPC(4317) 및 HTTP(4318) 포트 생성
+traces:
+  otlp:
+    grpc:
+      enabled: true
+    http:
+      enabled: true
+
+# 3.x에서는 Ingester/Compactor가 제거되고 Block-Builder/Live-Store로 대체되므로 2.x 레거시 비활성화
+ingester:
+  enabled: false
+compactor:
+  enabled: false
+memcached:
+  enabled: false
+
 tempo:
   structuredConfig:
     multitenancy_enabled: false
@@ -936,3 +984,6 @@ if __name__ == "__main__":
 5. **Kafka 파드 ImagePullBackOff (`docker.io/bitnami/kafka not found`)**:
    - Broadcom/Bitnami의 정책 변경으로 Docker Hub의 무료 이미지가 `bitnamilegacy/`로 이전되었습니다.
    - `ErrImagePull` 발생 시 values 파일에 `image.repository: bitnamilegacy/kafka`를 지정하거나 배포 커맨드에 `--set image.repository=bitnamilegacy/kafka`를 추가하세요.
+6. **`tempo-distributor` 서비스에 OTLP 포트(4317, 4318) 미노출**:
+   - Helm 차트 템플릿상 `traces.otlp.grpc.enabled: true` 및 `traces.otlp.http.enabled: true`가 선언되어야 Kubernetes Service에 4317/4318 포트가 매핑됩니다.
+   - 또한 차트 기본값으로 생성되는 2.x 레거시 컴포넌트를 방지하려면 `ingester.enabled: false`, `compactor.enabled: false`, `memcached.enabled: false`를 함께 설정해야 합니다.

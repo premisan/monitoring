@@ -4,6 +4,22 @@ serviceAccount:
   annotations:
     iam.gke.io/gcp-service-account: "tempo-gcs-sa@<GCP_PROJECT_ID>.iam.gserviceaccount.com"
 
+# Distributor Service에 OTLP gRPC(4317) 및 HTTP(4318) 포트 생성
+traces:
+  otlp:
+    grpc:
+      enabled: true
+    http:
+      enabled: true
+
+# 3.x에서는 Ingester/Compactor가 제거되고 Block-Builder/Live-Store로 대체되므로 2.x 레거시 비활성화
+ingester:
+  enabled: false
+compactor:
+  enabled: false
+memcached:
+  enabled: false
+
 tempo:
   structuredConfig:
     multitenancy_enabled: false
