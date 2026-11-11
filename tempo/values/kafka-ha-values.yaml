@@ -72,4 +72,8 @@ listeners:
   client:
     protocol: PLAINTEXT
 
+extraEnvVars:
+  - name: KAFKA_CFG_NUM_PARTITIONS
+    value: "6"
+
 autoCreateTopicsEnable: true

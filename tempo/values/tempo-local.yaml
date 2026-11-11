@@ -14,6 +14,8 @@ ingest:
   kafka:
     address: "tempo-kafka.monitoring.svc.cluster.local:9092"
     topic: "tempo-traces"
+    auto_create_topic_enabled: true
+    auto_create_topic_default_partitions: 1
 
 # 4. 백엔드 스토리지 설정
 storage:
@@ -26,14 +28,11 @@ distributor:
 
 blockBuilder:
   enabled: true
-  replicas: 1
-  persistence:
-    enabled: true
-    size: 2Gi
+  replicas: 1 # 싱글 Kafka 파티션(1개)과 1:1 매핑
 
 liveStore:
   enabled: true
-  replicas: 1
+  replicas: 1 # 싱글 Kafka 파티션(1개)과 1:1 매핑
   persistence:
     enabled: true
     size: 2Gi
@@ -41,13 +40,15 @@ liveStore:
 backendScheduler:
   enabled: true
   replicas: 1
+  config:
+    provider:
+      compaction:
+        compaction:
+          block_retention: 24h # 로컬 1일 보존
 
 backendWorker:
   enabled: true
   replicas: 1
-  persistence:
-    enabled: true
-    size: 2Gi
 
 querier:
   replicas: 1

@@ -87,7 +87,7 @@ Tempo 3.x는 수집(Write)과 조회(Read) 경로를 분리하고, **Kafka를 �
 | **목표 처리량** | 초당 수만 건 (20,000 spans/sec) | 초당 수백 건 | 기능 검증용 |
 | **클라우드/인프라** | GKE + GCS (`premium-rwo` SSD) | GKE + GCS (`standard-rwo`) | Docker Desktop (`backend: local`) |
 | **Kafka 구성** | Controller 3 + Broker 3 (전용 분리) | Controller 3 (Combined 겸용) | Controller 1 (Combined 싱글) |
-| **Kafka 파티션 수** | 6개 (`blockBuilder: 6`, `liveStore: 6`) | 3개 (`blockBuilder: 3`, `liveStore: 3`) | 1개 (`blockBuilder: 1`, `liveStore: 1`) |
+| **Kafka 파티션 수** | 6개 (`blockBuilder: 6`, `liveStore: 6`) | 6개 (`blockBuilder: 6`, `liveStore: 6`) | 1개 (`blockBuilder: 1`, `liveStore: 1`) |
 | **외부 노출** | Istio Gateway / VirtualService | Istio Gateway / VirtualService | Service Type: `LoadBalancer` |
 
 ---
@@ -165,6 +165,7 @@ helm upgrade --install tempo-kafka bitnami/kafka \
 
 ### 2.3 [Kafka-3] 싱글 파드 (시나리오 3용 - 로컬 개발)
 단일 파드로 동작하는 로컬 테스트용 최소 구성입니다.
+* 설정 파일: [`values/kafka-local-values.yaml`](values/kafka-local-values.yaml)
 
 ```bash
 cat << 'EOF' > values/kafka-local-values.yaml
@@ -177,6 +178,8 @@ kraft:
 controller:
   replicaCount: 1
   controllerOnly: false
+  extraConfig: |
+    num.partitions=1
 broker:
   replicaCount: 0
 listeners:
@@ -193,6 +196,9 @@ resources:
     memory: "1Gi"
 extraConfig: |
   num.partitions=1
+extraEnvVars:
+  - name: KAFKA_CFG_NUM_PARTITIONS
+    value: "1"
 autoCreateTopicsEnable: true
 EOF
 
@@ -259,6 +265,11 @@ helm upgrade --install tempo grafana-community/tempo-distributed \
 
 ### 3.2 [시나리오 2] 개발 환경 분산 모드 (GKE, GCS, Kafka 3노드)
 * 설정 파일: [`values/tempo-dev-gcs.yaml`](values/tempo-dev-gcs.yaml)
+  * `ingest.kafka`: `auto_create_topic_enabled: true`, `auto_create_topic_default_partitions: 6` 설정
+  * `blockBuilder: 6`, `liveStore: 6`: 3노드 Combined Kafka 토픽 파티션(6개)과 1:1 매핑
+  * `blockBuilder` / `backendWorker`: 불필요한 PVC(`persistence`)를 제거하여 무상태(Stateless)화
+  * `backendScheduler`: 3일 데이터 보존 주기(`block_retention: 72h`) 적용
+  * `liveStore`: 개발 환경 비용 절감을 위해 일반 디스크(`standard-rwo`) PVC 적용
 
 ```bash
 sed -i '' "s/<GCP_PROJECT_ID>/${GCP_PROJECT_ID}/g" values/tempo-dev-gcs.yaml
