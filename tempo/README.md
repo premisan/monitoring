@@ -350,7 +350,8 @@ spec:
     metadata:
       annotations:
         # 언어별 주입 (python, java, nodejs, dotnet, go)
-        instrumentation.opentelemetry.io/inject-python: "default/tempo-instrumentation"
+        # 형식: "<namespace>/<instrumentation-name>" 또는 같은 네임스페이스인 경우 "true" 또는 "<instrumentation-name>"
+        instrumentation.opentelemetry.io/inject-python: "default/default-instrumentation"
     spec:
       containers:
         - name: app

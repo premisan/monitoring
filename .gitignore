@@ -45,6 +45,3 @@ ENV/
 
 # Kubernetes / Helm
 *.tgz
-
-# Test / Local scratch
-test_values/
