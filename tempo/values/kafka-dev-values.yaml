@@ -1,0 +1,31 @@
+image:
+  registry: docker.io
+  repository: bitnamilegacy/kafka
+  tag: 4.0.0-debian-12-r10
+kraft:
+  enabled: true
+controller:
+  replicaCount: 3
+  controllerOnly: false
+  extraConfig: |
+    num.partitions=6
+broker:
+  replicaCount: 0
+listeners:
+  client:
+    protocol: PLAINTEXT
+persistence:
+  size: 20Gi
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "1000m"
+    memory: "2Gi"
+extraConfig: |
+  num.partitions=6
+extraEnvVars:
+  - name: KAFKA_CFG_NUM_PARTITIONS
+    value: "6"
+autoCreateTopicsEnable: true

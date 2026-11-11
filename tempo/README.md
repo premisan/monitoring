@@ -116,6 +116,11 @@ helm upgrade --install tempo-kafka bitnami/kafka \
 
 ### 2.2 [Kafka-2] 최소 3노드 Combined (시나리오 2용 - GKE 개발)
 Controller와 Broker를 파드 하나에서 겸용하는 3노드 쿼럼 구성입니다.
+* 설정 파일: [`values/kafka-dev-values.yaml`](values/kafka-dev-values.yaml)
+
+> [!TIP]
+> **파티션 수(6개) 및 KRaft Combined 모드 설정 주의사항**
+> Bitnami Kafka 차트의 KRaft Combined 모드에서는 토픽 자동 생성 시 기본 파티션 수가 루트 `extraConfig`만으로는 누락될 수 있으므로, `controller.extraConfig` 및 환경 변수 `extraEnvVars(KAFKA_CFG_NUM_PARTITIONS)`를 함께 지정해야 6개 파티션이 정상 생성됩니다. (Tempo HA의 `blockBuilder: 6`, `liveStore: 6`과 1:1 매핑 연동 가능)
 
 ```bash
 cat << 'EOF' > values/kafka-dev-values.yaml
@@ -128,6 +133,8 @@ kraft:
 controller:
   replicaCount: 3
   controllerOnly: false
+  extraConfig: |
+    num.partitions=6
 broker:
   replicaCount: 0
 listeners:
@@ -135,7 +142,6 @@ listeners:
     protocol: PLAINTEXT
 persistence:
   size: 20Gi
-  storageClass: "standard-rwo"
 resources:
   requests:
     cpu: "500m"
@@ -144,7 +150,10 @@ resources:
     cpu: "1000m"
     memory: "2Gi"
 extraConfig: |
-  num.partitions=3
+  num.partitions=6
+extraEnvVars:
+  - name: KAFKA_CFG_NUM_PARTITIONS
+    value: "6"
 autoCreateTopicsEnable: true
 EOF
 
@@ -225,16 +234,20 @@ gcloud storage buckets add-iam-policy-binding gs://${BUCKET_NAME} \
   --member="serviceAccount:${GSA_NAME}@${GCP_PROJECT_ID}.iam.gserviceaccount.com" \
   --role="roles/storage.objectAdmin"
 
-# Workload Identity 바인딩
+# Workload Identity 바인딩 (--project 명시 필수)
 gcloud iam service-accounts add-iam-policy-binding ${GSA_NAME}@${GCP_PROJECT_ID}.iam.gserviceaccount.com \
   --role="roles/iam.workloadIdentityUser" \
-  --member="serviceAccount:${GCP_PROJECT_ID}.svc.id.goog[monitoring/${KSA_NAME}]"
+  --member="serviceAccount:${GCP_PROJECT_ID}.svc.id.goog[monitoring/${KSA_NAME}]" \
+  --project=${GCP_PROJECT_ID}
 ```
 
 #### 2) Helm 배포 실행
 * 설정 파일: [`values/tempo-ha.yaml`](values/tempo-ha.yaml)
-  * `blockBuilder: 6`, `liveStore: 6` (Kafka 파티션 6개와 1:1 매핑)
-  * SSD 스토리지 클래스(`premium-rwo`) 적용
+  * `ingest.kafka`: `auto_create_topic_enabled: true`, `auto_create_topic_default_partitions: 6` 설정으로 토픽 자동 생성 및 파티션 6개 보장
+  * `blockBuilder: 6`, `liveStore: 6`: Kafka 토픽 파티션 수(6개)와 1:1 매핑
+  * `blockBuilder` / `backendWorker`: GCS 직접 스트리밍 및 컴팩션 방식으로 동작하므로 불필요한 PVC(`persistence`)를 제거하여 무상태(Stateless)화
+  * `backendScheduler`: 7일 데이터 보존 주기(`block_retention: 168h`) Compaction 설정 반영
+  * `liveStore`: 최근 트레이스 인메모리/캐시 서빙을 위한 PVC 적용 (GKE SSD `premium-rwo` 권장)
 
 ```bash
 sed -i '' "s/<GCP_PROJECT_ID>/${GCP_PROJECT_ID}/g" values/tempo-ha.yaml

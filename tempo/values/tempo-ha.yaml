@@ -18,6 +18,8 @@ ingest:
   kafka:
     address: "tempo-kafka.monitoring.svc.cluster.local:9092"
     topic: "tempo-traces"
+    auto_create_topic_enabled: true
+    auto_create_topic_default_partitions: 6
 
 storage:
   trace:
@@ -27,9 +29,8 @@ storage:
     block:
       version: vParquet5
 
-# 초당 2만건(20k spans/sec) 기준 컴포넌트 사이징
 distributor:
-  replicas: 4
+  replicas: 3
   autoscaling:
     enabled: true
     minReplicas: 3
@@ -46,10 +47,6 @@ distributor:
 blockBuilder:
   enabled: true
   replicas: 6 # Kafka 토픽 파티션 수(6개)와 1:1 매핑
-  persistence:
-    enabled: true
-    size: 30Gi
-    storageClass: "premium-rwo"
   resources:
     requests:
       cpu: "1000m"
@@ -64,7 +61,7 @@ liveStore:
   persistence:
     enabled: true
     size: 20Gi
-    storageClass: "premium-rwo"
+    storageClass: "premium-rwo" # GKE SSD 권장 (또는 standard-rwo)
   resources:
     requests:
       cpu: "1000m"
@@ -75,29 +72,30 @@ liveStore:
 
 backendScheduler:
   enabled: true
-  replicas: 2
+  replicas: 1
+  config:
+    provider:
+      compaction:
+        compaction:
+          block_retention: 168h # 7일 보존
 
 backendWorker:
   enabled: true
-  replicas: 3
+  replicas: 1
   podDisruptionBudget:
     enabled: true
     maxUnavailable: 1
-  persistence:
-    enabled: true
-    size: 50Gi
-    storageClass: "premium-rwo"
   resources:
     requests:
       cpu: "1000m"
       memory: "2Gi"
 
 querier:
-  replicas: 3
+  replicas: 1
   resources:
     requests:
       cpu: "1000m"
       memory: "2Gi"
 
 queryFrontend:
-  replicas: 2
+  replicas: 1
